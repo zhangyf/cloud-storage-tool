@@ -20,7 +20,6 @@
   - 2.2.4 对象操作详细参考
   - 2.2.5 全局选项
   - 2.2.6 环境变量配置
-  - 2.2.7 综合使用示例
 
 ### 3. 非功能需求
 - 3.1 性能要求
@@ -981,63 +980,7 @@ export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
 export AWS_REGION="ap-singapore"  # 可选，可覆盖配置文件
 ```
 
-##### 2.2.7 综合使用示例
 
-**场景：备份策略设置**
-```bash
-# 1. 创建备份桶
-cloud-storage-tool cos mb backup-2026 --region ap-singapore --acl private
-
-# 2. 启用版本控制
-cloud-storage-tool cos versioning backup-2026 enable
-
-# 3. 设置清单配置，每天生成报告
-cloud-storage-tool cos inventory backup-2026 create \
-  --name daily-backup-inventory \
-  --destination monitoring-bucket \
-  --schedule Daily
-
-# 4. 设置生命周期规则：30天转低频，90天删除（基于修改时间）
-cloud-storage-tool cos lifecycle backup-2026 create \
-  --id backup-retention \
-  --time-type mtime \
-  --transition-days 30 \
-  --expiration-days 90
-
-# 5. 查看桶完整配置
-cloud-storage-tool cos info backup-2026 --details
-```
-
-**场景：日志管理策略**
-```bash
-# 1. 创建日志桶
-cloud-storage-tool s3 mb app-logs --region us-east-1
-
-# 2. 设置ACL为私有
-cloud-storage-tool s3 acl app-logs set --acl private
-
-# 3. 设置生命周期：7天转低频，30天删除（基于修改时间）
-cloud-storage-tool s3 lifecycle app-logs create \
-  --id logs-retention \
-  --prefix "app/" \
-  --time-type mtime \
-  --transition-days 7 \
-  --expiration-days 30
-
-# 4. 清理7天前的未完成分块上传（基于修改时间，atime规则不支持此参数）
-cloud-storage-tool s3 lifecycle app-logs create \
-  --id abort-multipart \
-  --time-type mtime \
-  --abort-incomplete-multipart-days 7
-```
-
----
-
-**注意**：
-1. 所有AK/SK等敏感信息必须通过环境变量配置，不在配置文件中明文存储
-2. 删除操作默认需要确认，使用`--force`跳过确认
-3. 区域参数可覆盖配置文件中的默认设置
-4. 所有命令都支持`--dry-run`模拟运行模式
 
 ## 3. 非功能需求
 
@@ -1259,7 +1202,7 @@ logging:
 
 ---
 
-**文档版本**：1.4  
+**文档版本**：1.5  
 **创建日期**：2026-03-05  
 **最后更新**：2026-03-05  
 **状态**：草案
