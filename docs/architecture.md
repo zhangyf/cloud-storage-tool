@@ -278,7 +278,7 @@ type StorageProvider interface {
 }
 ```
 
-### 2.2 新增数据结构
+### 2.3 新增数据结构
 ```go
 // CompletedPart 分块上传完成的部分
 type CompletedPart struct {
