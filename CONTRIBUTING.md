@@ -147,7 +147,7 @@ type StorageProvider interface {
 
 ## 联系方式
 
-- 项目维护者: 张宇峰
+- 项目维护者: zhangyf
 - GitHub Issues: [问题跟踪](https://github.com/zhangyf/cloud-storage-tool/issues)
 - 讨论区: [GitHub Discussions](https://github.com/zhangyf/cloud-storage-tool/discussions)
 

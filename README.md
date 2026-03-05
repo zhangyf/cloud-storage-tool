@@ -121,6 +121,6 @@ MIT License
 
 ## 联系方式
 
-- 项目维护者: 张宇峰
+- 项目维护者: zhangyf
 - GitHub: [zhangyf](https://github.com/zhangyf)
 - 问题跟踪: [GitHub Issues](https://github.com/zhangyf/cloud-storage-tool/issues)
