@@ -24,6 +24,8 @@
 - **桶删除**：删除空桶或强制删除
 - **桶信息**：查看桶详细信息（区域、创建时间等）
 - **桶权限**：管理桶的访问权限
+- **桶清单配置**：配置桶的清单规则，生成存储对象清单报告
+- **生命周期规则管理**：配置对象的生命周期规则，自动转换存储类型或过期删除
 
 #### 2.1.2 对象（Object）管理
 - **对象上传**：支持文件、目录上传
@@ -185,31 +187,50 @@ type StorageProvider interface {
 ### 5.1 配置文件格式
 ```yaml
 # ~/.cloud-storage/config.yaml
+# 安全提示：敏感信息（AK/SK）不应明文存储在配置文件中
+# 请使用环境变量进行配置
+
 providers:
   cos:
     enabled: true
+    # 必须通过环境变量配置，不在配置文件中明文存储
     secret_id: ${TENCENT_COS_SECRET_ID}
     secret_key: ${TENCENT_COS_SECRET_KEY}
     default_region: ap-singapore
     default_bucket: openclaw-bakup-1251036673
+    endpoint: ""  # 可选，自定义端点
     
   s3:
     enabled: true
+    # 必须通过环境变量配置，不在配置文件中明文存储
     access_key: ${AWS_ACCESS_KEY_ID}
     secret_key: ${AWS_SECRET_ACCESS_KEY}
     region: ${AWS_REGION}
     endpoint: ""  # 可选，用于兼容S3协议的其他服务
+    force_path_style: false
 
 defaults:
   provider: cos    # 默认提供商
   threads: 10      # 默认并发数
   retry_count: 3   # 默认重试次数
   timeout: 300     # 默认超时时间（秒）
-
+  part_size: 10485760    # 分块上传大小（10MB）
+  
+# 同步设置
+sync:
+  exclude_patterns:      # 排除模式（类似.gitignore）
+    - "*.tmp"
+    - "*.log"
+    - ".git/*"
+    - ".DS_Store"
+  compare_method: mtime  # 同步比较方法：mtime|size|checksum
+  delete: false          # 是否删除目标端多余文件
+  
+# 日志设置
 logging:
-  level: info
-  format: json
-  file: /var/log/cloud-storage.log
+  level: info           # 日志级别：debug|info|warn|error
+  format: text          # 日志格式：text|json
+  file: ""              # 日志文件路径（空则输出到控制台）
 ```
 
 ### 5.2 配置来源优先级
@@ -285,18 +306,11 @@ logging:
 - **维护成本**：需要持续跟进云服务商API变化
   - 缓解：模块化设计，易于扩展新提供商
 
-## 9. 后续扩展
+## 9. 扩展计划
 
-### 9.1 短期扩展
 - 支持阿里云OSS
 - 支持华为云OBS
 - 支持Google Cloud Storage
-
-### 9.2 长期愿景
-- Web管理界面
-- 图形化客户端
-- RESTful API服务
-- 存储成本分析和优化建议
 
 ---
 
