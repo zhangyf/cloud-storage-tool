@@ -356,6 +356,7 @@ type DownloadOptions struct {
 type Bucket struct {
     Name           string
     Region         string
+    Location       string          // 桶的物理位置（如数据中心、可用区）
     CreatedAt      time.Time
     Size           int64
     Objects        int64
@@ -402,6 +403,7 @@ type ObjectInfo struct {
     VersionId                string
     Expiration               time.Time
     LastModified             time.Time
+    CreationDate             time.Time      // 对象创建时间
     ETag                     string
     Checksum                 string
     ACL                      string
