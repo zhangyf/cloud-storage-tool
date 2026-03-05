@@ -987,7 +987,7 @@ cloud-storage-tool mv s3://bucket/newer s3://bucket/older --force
 cloud-storage-tool mv cos://src/dir/ cos://dst/dir/ --recursive --dry-run
 ```
 
-##### 2.2.7 同步功能详细参考
+#### 2.2.7 同步功能详细参考
 
 **同步类型**
 - **本地 ↔ 云同步**：本地文件系统与云存储之间的双向同步
@@ -1002,7 +1002,7 @@ cloud-storage-tool mv cos://src/dir/ cos://dst/dir/ --recursive --dry-run
 - **断点续传**：支持同步中断后继续
 - **冲突解决**：提供多种冲突解决策略（保留最新、保留源、手动处理等）
 
-###### 2.2.7.1 同步命令 (Sync)
+##### 2.2.7.1 同步命令 (Sync)
 
 **命令格式**
 ```bash
@@ -1078,7 +1078,7 @@ cloud-storage-tool sync ./logs/ cos://bucket/logs/ \
 cloud-storage-tool sync ./backup/ cos://bucket/backup/ --verbose
 ```
 
-###### 2.2.7.2 冲突解决策略
+##### 2.2.7.2 冲突解决策略
 
 **冲突类型**
 1. **文件修改冲突**：源和目标文件都被修改
@@ -1115,7 +1115,7 @@ cloud-storage-tool sync ./source/ ./dest/ \
 | `--backup-dir` | `-B` | 备份目录路径 | 同源目录 |
 | `--suffix` | `-x` | 备份文件后缀 | .backup |
 
-###### 2.2.7.3 同步报告与监控
+##### 2.2.7.3 同步报告与监控
 
 **生成同步报告**
 ```bash
@@ -1377,7 +1377,7 @@ logging:
 
 ---
 
-**文档版本**：2.0  
+**文档版本**：2.1  
 **创建日期**：2026-03-05  
 **最后更新**：2026-03-05  
 **状态**：草案
