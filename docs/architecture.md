@@ -55,6 +55,26 @@ Cloud Storage Tool 采用**插件化架构**，核心是统一的存储接口，
 
 遵循**接口隔离原则**，将大的存储提供商接口拆分为多个专注的小接口，便于实现和测试。
 
+#### 2.1.0 接口并发安全性说明
+
+所有存储提供商接口的方法都**必须满足线程安全要求**，除非在方法注释中明确说明。具体规则如下：
+
+1. **读操作**（GetXxx、ListXxx、ExistXxx）：允许多个goroutine并发调用
+2. **写操作**（CreateXxx、UpdateXxx、DeleteXxx）：需要实现适当的并发控制，避免资源冲突
+3. **连接状态**：共享的连接池必须是线程安全的
+4. **错误处理**：并发错误必须正确传播，不会导致panic或数据损坏
+
+**实现要求**：
+- 使用`sync.RWMutex`保护共享状态
+- 使用`atomic`操作处理计数器等简单状态
+- 避免在方法内部创建全局锁
+- 遵循Go的"share memory by communicating"原则
+
+**接口方法线程安全级别**：
+- ✅ **完全线程安全**：所有实现必须保证方法调用的线程安全
+- ⚠️ **有条件线程安全**：某些方法可能需要在实现时添加额外同步
+- 🔴 **非线程安全**：必须在文档中明确标注，调用方负责同步
+
 #### 2.1.1 基础接口拆分
 
 ```go
@@ -64,29 +84,146 @@ type BucketManager interface {
     CreateBucket(ctx context.Context, name, region string) error
     DeleteBucket(ctx context.Context, name string, force bool) error
     GetBucketInfo(ctx context.Context, name string) (BucketInfo, error)
+    
+    // 桶存在性检查
+    ExistBucket(ctx context.Context, name string) (bool, error)
+    
+    // 桶策略管理
     SetBucketPolicy(ctx context.Context, bucket, policy string) error
     GetBucketPolicy(ctx context.Context, bucket) (string, error)
+    
+    // 桶标签管理
+    SetBucketTagging(ctx context.Context, bucket string, tags map[string]string) error
+    GetBucketTagging(ctx context.Context, bucket string) (map[string]string, error)
+    DeleteBucketTagging(ctx context.Context, bucket string) error
+    
+    // 桶加密配置
+    SetBucketEncryption(ctx context.Context, bucket string, config *SSEConfig) error
+    GetBucketEncryption(ctx context.Context, bucket string) (*SSEConfig, error)
+    DeleteBucketEncryption(ctx context.Context, bucket string) error
+    
+    // 桶版本控制
+    GetBucketVersioning(ctx context.Context, bucket string) (VersioningStatus, error)
+    SetBucketVersioning(ctx context.Context, bucket string, status VersioningStatus) error
 }
+
+### 2.1.2 分页支持机制
+
+Cloud Storage Tool 提供完整的分页支持，处理大规模对象列表查询。
+
+#### 分页设计原理
+1. **游标分页**：使用`ContinuationToken`代替偏移量，避免数据变化导致的重复或遗漏
+2. **可配置页面大小**：通过`MaxKeys`参数控制每页返回的对象数量
+3. **递归查询**：支持目录式查询和扁平化查询
+4. **高效内存使用**：流式处理分页结果，避免一次性加载所有数据
+
+#### ListObjects 分页示例
+```go
+// 分页查询对象列表
+func listAllObjects(ctx context.Context, provider ObjectManager, bucket, prefix string) ([]Object, error) {
+    var allObjects []Object
+    var continuationToken string
+    
+    for {
+        opts := ListOptions{
+            Prefix:             prefix,
+            MaxKeys:            1000, // 每页1000个对象
+            ContinuationToken:  continuationToken,
+            Recursive:          true,
+        }
+        
+        result, err := provider.ListObjects(ctx, bucket, prefix, opts)
+        if err != nil {
+            return nil, err
+        }
+        
+        allObjects = append(allObjects, result.Objects...)
+        
+        if !result.IsTruncated {
+            break
+        }
+        
+        continuationToken = result.NextContinuationToken
+    }
+    
+    return allObjects, nil
+}
+```
+
+#### 分页性能优化
+- **并发预取**：后台预取下一页数据
+- **缓存策略**：缓存常用前缀的列表结果
+- **增量更新**：支持增量查询，只获取新增对象
+- **超时控制**：长时间查询自动超时，避免资源占用
+
+#### 分页状态管理
+```go
+// ListOptions 分页选项
+type ListOptions struct {
+    Prefix     string          // 对象前缀过滤
+    Delimiter  string          // 目录分隔符（如"/"）
+    MaxKeys    int             // 每页最大对象数（默认1000）
+    ContinuationToken string   // 继续令牌（用于分页）
+    Recursive  bool            // 是否递归查询
+}
+
+// ListObjectsResult 分页结果
+type ListObjectsResult struct {
+    Objects           []Object // 当前页对象列表
+    IsTruncated       bool     // 是否还有更多数据
+    ContinuationToken string   // 当前页令牌（用于调试）
+    NextContinuationToken string // 下一页令牌
+    CommonPrefixes    []string // 公共前缀（使用Delimiter时）
+}
+```
 
 // ObjectManager 对象管理接口
 type ObjectManager interface {
-    ListObjects(ctx context.Context, bucket, prefix string, recursive bool) ([]Object, error)
-    UploadFile(ctx context.Context, bucket, key, filepath string, opts UploadOptions) error
-    DownloadFile(ctx context.Context, bucket, key, filepath string, opts DownloadOptions) error
+    // 对象列表（支持分页）
+    ListObjects(ctx context.Context, bucket, prefix string, opts ListOptions) (*ListObjectsResult, error)
+    
+    // 对象上传/下载（支持流式操作）
+    UploadFile(ctx context.Context, bucket, key string, data io.Reader, opts UploadOptions) error
+    DownloadFile(ctx context.Context, bucket, key string, writer io.Writer, opts DownloadOptions) error
+    
+    // 对象删除
     DeleteObject(ctx context.Context, bucket, key string) error
     DeleteObjectsBatch(ctx context.Context, bucket string, keys []string) ([]DeleteResult, error)
+    
+    // 对象复制和移动
     CopyObject(ctx context.Context, srcBucket, srcKey, dstBucket, dstKey string) error
+    MoveObject(ctx context.Context, srcBucket, srcKey, dstBucket, dstKey string) error
+    
+    // 对象元数据操作
     GetObjectInfo(ctx context.Context, bucket, key string) (ObjectInfo, error)
+    StatObject(ctx context.Context, bucket, key string) (ObjectStat, error)
     ObjectExists(ctx context.Context, bucket, key string) (bool, error)
+    
+    // 高级对象操作
+    SelectObjectContent(ctx context.Context, bucket, key string, query string, opts SelectOptions) (io.ReadCloser, error)
+    
+    // 对象标签管理
+    SetObjectTagging(ctx context.Context, bucket, key string, tags map[string]string) error
+    GetObjectTagging(ctx context.Context, bucket, key string) (map[string]string, error)
+    DeleteObjectTagging(ctx context.Context, bucket, key string) error
 }
 
 // MultipartUploadManager 分块上传管理接口
 type MultipartUploadManager interface {
+    // 分块上传生命周期管理
     InitiateMultipartUpload(ctx context.Context, bucket, key string) (string, error)
     UploadPart(ctx context.Context, bucket, key, uploadID string, partNumber int, data io.Reader) (string, error)
+    UploadPartFromURL(ctx context.Context, bucket, key, uploadID string, partNumber int, sourceURL string) (string, error)
     CompleteMultipartUpload(ctx context.Context, bucket, key, uploadID string, parts []CompletedPart) error
     AbortMultipartUpload(ctx context.Context, bucket, key, uploadID string) error
     ListMultipartUploads(ctx context.Context, bucket, prefix string) ([]MultipartUpload, error)
+    
+    // 分块上传工具方法
+    PresignUploadPartURL(ctx context.Context, bucket, key, uploadID string, partNumber int, expires time.Duration) (string, error)
+    TerminateAllMultipartUploads(ctx context.Context, bucket string, gracePeriod time.Duration) error
+    
+    // 分块上传状态查询
+    GetMultipartUploadStatus(ctx context.Context, bucket, key, uploadID string) (*MultipartUploadStatus, error)
 }
 
 // ACLManager 访问控制管理接口
@@ -113,11 +250,21 @@ type PresignedURLManager interface {
 
 // ProviderInfo 提供商信息接口
 type ProviderInfo interface {
+    // 基础信息
     Name() string
     Version() string
     Capabilities() ProviderCapabilities
+    
+    // 区域信息
     Region() string
+    SupportedRegions() []string
+    IsRegionSupported(region string) bool
+    
+    // 功能检查
     Supports(feature string) bool
+    
+    // 提供商元数据
+    GetProviderMetadata() map[string]string
 }
 
 // StorageProvider 统一存储提供商接口（组合接口）
@@ -170,26 +317,220 @@ type LifecycleRule struct {
 type UploadOptions struct {
     ContentType        string
     ContentEncoding    string
+    ContentLanguage    string
+    CacheControl       string
+    ContentDisposition string
     Metadata           map[string]string
     StorageClass       string
     ACL                string
-    ServerSideEncryption string
+    SSEConfig          *SSEConfig
     ChecksumAlgorithm  string // MD5, SHA256, CRC32C等
     PartSize           int64  // 分块大小
     Concurrency        int    // 并发数
+    WebsiteRedirectLocation string
+    Expires            time.Time
+    LegalHold          bool
+    RetentionMode      string
+    RetentionUntilDate time.Time
 }
 
 // DownloadOptions 下载选项
 type DownloadOptions struct {
-    Range              string // HTTP Range头
+    Range              string // HTTP Range头，如"bytes=0-100"
     IfMatch            string // ETag条件
+    IfNoneMatch        string // ETag条件（不匹配时下载）
     IfModifiedSince    time.Time
     IfUnmodifiedSince  time.Time
     ChecksumValidation bool   // 是否验证校验和
     Concurrency        int    // 并发下载分块数
+    VersionId          string // 对象版本ID
+    ResponseHeaders    map[string]string // 响应头覆盖
+    ProgressFunc       func(bytesTransferred, totalBytes int64) // 进度回调
 }
 
-// Enhanced ProviderCapabilities 增强的提供商能力
+
+```
+
+### 2.2 数据结构
+```go
+// Bucket 桶信息
+type Bucket struct {
+    Name           string
+    Region         string
+    CreatedAt      time.Time
+    Size           int64
+    Objects        int64
+    Owner          string
+    Tags           map[string]string
+    SSEConfig      *SSEConfig
+    Versioning     VersioningStatus
+    ACL            string
+    Policy         string
+    LifecycleRules []LifecycleRule
+}
+
+// Object 对象信息
+type Object struct {
+    Key          string
+    Size         int64
+    LastModified time.Time
+    ETag         string
+    StorageClass string
+    ContentType  string
+    Metadata     map[string]string
+    ACL          string
+    Checksum     string
+    IsTruncated  bool
+    Owner        string
+    Tags         map[string]string
+}
+
+// ObjectInfo 对象详细信息
+type ObjectInfo struct {
+    Bucket                   string
+    Key                      string
+    Size                     int64
+    ContentType              string
+    Metadata                 map[string]string
+    CacheControl             string
+    ContentDisposition       string
+    ContentEncoding          string
+    ContentLanguage          string
+    StorageClass             string
+    WebsiteRedirectLocation  string
+    ServerSideEncryption     string
+    SSEKMSKeyId              string
+    VersionId                string
+    Expiration               time.Time
+    LastModified             time.Time
+    ETag                     string
+    Checksum                 string
+    ACL                      string
+    Tags                     map[string]string
+}
+
+// 新增：对象统计信息（轻量级元数据）
+type ObjectStat struct {
+    Key          string
+    Size         int64
+    LastModified time.Time
+    ETag         string
+    StorageClass string
+    ContentType  string
+    Metadata     map[string]string
+    ACL          string
+    Checksum     string
+}
+
+// 新增：列表选项（支持分页）
+type ListOptions struct {
+    Prefix     string
+    Delimiter  string
+    MaxKeys    int
+    ContinuationToken string
+    Recursive  bool
+}
+
+// 新增：列表结果（支持分页）
+type ListObjectsResult struct {
+    Objects           []Object
+    IsTruncated       bool
+    ContinuationToken string
+    NextContinuationToken string
+    CommonPrefixes    []string
+}
+
+// 新增：版本控制状态
+type VersioningStatus string
+
+const (
+    VersioningEnabled    VersioningStatus = "Enabled"
+    VersioningSuspended  VersioningStatus = "Suspended"
+    VersioningDisabled   VersioningStatus = "Disabled"
+)
+
+// 新增：服务端加密配置
+type SSEConfig struct {
+    Algorithm string // "AES256", "aws:kms", "cos:kms"等
+    KMSKeyID  string // KMS密钥ID（如使用KMS）
+    Context   map[string]string // 加密上下文
+}
+
+// 新增：Select查询选项
+type SelectOptions struct {
+    Expression     string
+    ExpressionType string // "SQL"
+    InputSerialization  *InputSerialization
+    OutputSerialization *OutputSerialization
+    ScanRange      *ScanRange
+}
+
+// 新增：输入序列化格式
+type InputSerialization struct {
+    CSV  *CSVInput
+    JSON *JSONInput
+    Parquet *ParquetInput
+}
+
+// 新增：输出序列化格式
+type OutputSerialization struct {
+    CSV  *CSVOutput
+    JSON *JSONOutput
+}
+
+// 新增：CSV输入格式
+type CSVInput struct {
+    FileHeaderInfo       string // "USE", "IGNORE", "NONE"
+    Comments             string
+    QuoteEscapeCharacter string
+    RecordDelimiter      string
+    FieldDelimiter       string
+    QuoteCharacter       string
+    AllowQuotedRecordDelimiter bool
+}
+
+// 新增：JSON输入格式
+type JSONInput struct {
+    Type string // "DOCUMENT", "LINES"
+}
+
+// 新增：Parquet输入格式
+type ParquetInput struct {
+    // Parquet格式不需要额外配置
+}
+
+// 新增：CSV输出格式
+type CSVOutput struct {
+    QuoteFields          string // "ASNEEDED", "ALWAYS"
+    QuoteEscapeCharacter string
+    RecordDelimiter      string
+    FieldDelimiter       string
+    QuoteCharacter       string
+}
+
+// 新增：JSON输出格式
+type JSONOutput struct {
+    RecordDelimiter string
+}
+
+// 新增：扫描范围
+type ScanRange struct {
+    Start  int64
+    End    int64
+}
+
+// 新增：分块上传状态
+type MultipartUploadStatus struct {
+    UploadID    string
+    Key         string
+    Initiated   time.Time
+    PartsUploaded int
+    TotalSize   int64
+    CompletedSize int64
+    IsCompleted bool
+}
+
+// ProviderCapabilities 提供商能力
 type ProviderCapabilities struct {
     SupportsMultipartUpload        bool
     SupportsPresignedURL           bool
@@ -201,50 +542,11 @@ type ProviderCapabilities struct {
     SupportsObjectLock             bool
     SupportsIntelligentTiering     bool
     SupportsBatchOperations        bool
+    SupportsSelectContent          bool
     MaxPartSize                    int64
     MaxObjectSize                  int64
     MaxMultipartParts              int
     MaxBatchDeleteSize             int
-}
-```
-
-### 2.2 数据结构
-```go
-// Bucket 桶信息
-type Bucket struct {
-    Name      string
-    Region    string
-    CreatedAt time.Time
-    Size      int64
-    Objects   int64
-}
-
-// Object 对象信息
-type Object struct {
-    Key          string
-    Size         int64
-    LastModified time.Time
-    ETag         string
-    StorageClass string
-}
-
-// ObjectInfo 对象详细信息
-type ObjectInfo struct {
-    Bucket      string
-    Key         string
-    Size        int64
-    ContentType string
-    Metadata    map[string]string
-}
-
-// ProviderCapabilities 提供商能力
-type ProviderCapabilities struct {
-    SupportsMultipartUpload bool
-    SupportsPresignedURL    bool
-    SupportsVersioning      bool
-    SupportsLifecycle       bool
-    MaxPartSize             int64
-    MaxObjectSize           int64
 }
 ```
 
@@ -282,9 +584,76 @@ type ProviderCapabilities struct {
 - **缓冲区管理**：可配置的缓冲区大小
 - **内存池**：重用内存减少分配
 
+### 4.4 资源清理机制
+
+Cloud Storage Tool 提供完善的资源清理机制，防止资源泄漏和悬空状态。
+
+#### 4.4.1 分块上传资源清理
+分块上传失败或中断时，系统自动清理悬空资源：
+
+```go
+// 强制终止所有分块上传（生产环境重要操作）
+TerminateAllMultipartUploads(ctx context.Context, bucket string, gracePeriod time.Duration) error
+
+// 自动清理机制
+- 分块上传创建时记录到持久化存储
+- 定期扫描超时的分块上传（默认24小时）
+- 提供API手动清理特定上传
+- 支持grace period避免误删进行中的上传
+```
+
+#### 4.4.2 连接和缓冲区清理
+- **连接池自动回收**：闲置连接超时自动关闭
+- **缓冲区重用池**：避免重复分配内存
+- **文件句柄管理**：确保上传/下载后文件正确关闭
+- **临时文件清理**：操作失败时自动清理临时文件
+
+#### 4.4.3 监控和告警
+- **资源使用监控**：实时监控连接数、内存使用、文件句柄
+- **自动告警**：资源泄漏时自动触发告警
+- **健康检查**：定期检查资源状态并自动恢复
+
+#### 4.4.4 优雅关闭
+```go
+// StorageProvider 关闭接口
+type CleanupProvider interface {
+    // 优雅关闭，清理所有资源
+    Close() error
+    
+    // 强制关闭，立即释放资源
+    ForceClose() error
+    
+    // 获取资源状态
+    ResourceStats() ResourceStats
+}
+
+// 资源状态统计
+type ResourceStats struct {
+    OpenConnections    int
+    ActiveUploads      int
+    ActiveDownloads    int
+    MultipartUploads   int
+    MemoryInUse        int64
+    BufferPoolSize     int
+}
+```
+
 ## 5. 错误处理与恢复
 
 ### 5.1 增强的错误分类与标准化
+
+**错误分类机制的重要性**：
+准确的错误分类是系统可靠性的基础，它允许：
+1. **智能重试决策**：区分可重试错误和不可重试错误
+2. **用户体验优化**：提供有针对性的错误提示和建议
+3. **运维监控**：基于错误类型进行监控和告警
+4. **故障诊断**：快速定位问题根源
+
+**错误分类原则**：
+1. **完整性**：覆盖所有可能的错误场景
+2. **一致性**：相同类型的错误使用相同的错误码
+3. **可操作性**：每个错误都提供明确的处理建议
+4. **可扩展性**：支持未来新增错误类型
 
 #### 5.1.1 详细错误分类
 ```go
@@ -660,11 +1029,294 @@ func (r *LogRecoverySystem) RecoverFailedOperations(ctx context.Context, since t
 ## 6. 扩展性设计
 
 ### 6.1 插件系统
-- 提供商接口易于实现
-- 动态加载提供商插件
-- 配置文件自动发现插件
 
-### 6.2 中间件支持
+#### 6.1.1 插件架构设计
+Cloud Storage Tool 采用**完全插件化的架构**，所有存储提供商都以插件形式存在，支持动态加载和热插拔。
+
+#### 6.1.2 插件发现机制
+```go
+// PluginDescriptor 插件描述符
+type PluginDescriptor struct {
+    Name           string                 // 插件名称（如 "cos"、"s3"）
+    Version        string                 // 插件版本（语义化版本）
+    Description    string                 // 插件描述
+    ProviderType   string                 // 提供商类型（"cos"、"s3"、"oss"等）
+    EntryPoint     string                 // 插件入口函数名
+    Dependencies   []PluginDependency     // 依赖的其他插件
+    Capabilities   ProviderCapabilities   // 插件能力声明
+    Metadata       map[string]string      // 插件元数据
+}
+
+// PluginDependency 插件依赖
+type PluginDependency struct {
+    Name    string  // 依赖插件名称
+    Version string  // 版本约束（如 ">=1.0.0, <2.0.0"）
+}
+
+// PluginRegistry 插件注册表
+type PluginRegistry interface {
+    // 插件发现
+    DiscoverPlugins(ctx context.Context, searchPaths []string) ([]PluginDescriptor, error)
+    RegisterPlugin(descriptor PluginDescriptor, factory ProviderFactory) error
+    UnregisterPlugin(name string) error
+    
+    // 插件加载
+    LoadPlugin(ctx context.Context, name string) (StorageProvider, error)
+    UnloadPlugin(name string) error
+    
+    // 插件查询
+    GetPlugin(name string) (*PluginDescriptor, error)
+    ListPlugins() ([]PluginDescriptor, error)
+    HasPlugin(name string) bool
+}
+
+// ProviderFactory 提供商工厂函数
+type ProviderFactory func(ctx context.Context, config ProviderConfig) (StorageProvider, error)
+```
+
+#### 6.1.3 插件加载流程
+1. **扫描阶段**：在预定义的插件目录中扫描插件文件
+2. **验证阶段**：验证插件签名和完整性
+3. **注册阶段**：解析插件描述符并注册到插件注册表
+4. **初始化阶段**：按需加载插件，调用入口函数创建提供商实例
+
+#### 6.1.4 插件目录结构
+```
+~/.cloud-storage/plugins/
+├── cos-plugin/
+│   ├── plugin.json        # 插件描述文件
+│   ├── cos-provider.so    # 插件二进制（Linux）
+│   ├── cos-provider.dylib # 插件二进制（macOS）
+│   └── cos-provider.dll   # 插件二进制（Windows）
+├── s3-plugin/
+│   ├── plugin.json
+│   └── s3-provider.so
+└── oss-plugin/
+    ├── plugin.json
+    └── oss-provider.so
+```
+
+#### 6.1.5 插件描述文件示例（plugin.json）
+```json
+{
+  "name": "cos",
+  "version": "1.0.0",
+  "description": "Tencent Cloud COS storage provider",
+  "provider_type": "cos",
+  "entry_point": "NewCOSProvider",
+  "dependencies": [],
+  "capabilities": {
+    "supports_multipart_upload": true,
+    "supports_presigned_url": true,
+    "supports_versioning": true,
+    "supports_lifecycle": true,
+    "supports_server_side_encryption": true,
+    "max_part_size": 5368709120,
+    "max_object_size": 5497558138880
+  },
+  "metadata": {
+    "vendor": "Tencent Cloud",
+    "service_name": "COS",
+    "documentation_url": "https://cloud.tencent.com/document/product/436"
+  }
+}
+```
+
+#### 6.1.6 动态加载实现
+```go
+// PluginLoader 插件加载器
+type PluginLoader struct {
+    registry PluginRegistry
+    plugins  map[string]*plugin.Plugin
+    mu       sync.RWMutex
+}
+
+// LoadPlugin 动态加载插件
+func (l *PluginLoader) LoadPlugin(ctx context.Context, pluginPath string) error {
+    l.mu.Lock()
+    defer l.mu.Unlock()
+    
+    // 1. 打开插件文件
+    p, err := plugin.Open(pluginPath)
+    if err != nil {
+        return fmt.Errorf("failed to open plugin %s: %v", pluginPath, err)
+    }
+    
+    // 2. 查找描述符符号
+    var descriptorSymbol interface{}
+    if descriptorSymbol, err = p.Lookup("PluginDescriptor"); err != nil {
+        return fmt.Errorf("plugin %s missing PluginDescriptor: %v", pluginPath, err)
+    }
+    
+    // 3. 解析描述符
+    descriptor, ok := descriptorSymbol.(*PluginDescriptor)
+    if !ok {
+        return fmt.Errorf("invalid plugin descriptor type in %s", pluginPath)
+    }
+    
+    // 4. 查找工厂函数
+    var factorySymbol interface{}
+    if factorySymbol, err = p.Lookup(descriptor.EntryPoint); err != nil {
+        return fmt.Errorf("plugin %s missing entry point %s: %v", 
+            pluginPath, descriptor.EntryPoint, err)
+    }
+    
+    factory, ok := factorySymbol.(ProviderFactory)
+    if !ok {
+        return fmt.Errorf("invalid factory function type in %s", pluginPath)
+    }
+    
+    // 5. 注册插件
+    if err := l.registry.RegisterPlugin(*descriptor, factory); err != nil {
+        return fmt.Errorf("failed to register plugin %s: %v", descriptor.Name, err)
+    }
+    
+    l.plugins[descriptor.Name] = p
+    return nil
+}
+```
+
+### 6.2 版本兼容性管理
+
+#### 6.2.1 版本策略
+- **语义化版本控制**：遵循 `MAJOR.MINOR.PATCH` 格式
+- **向后兼容**：MINOR 版本增加保证向后兼容
+- **破坏性变更**：MAJOR 版本增加表示有破坏性变更
+
+#### 6.2.2 接口版本管理
+```go
+// VersionedInterface 版本化接口
+type VersionedInterface struct {
+    InterfaceName string    // 接口名称
+    Version       string    // 接口版本（如 "v1.0.0"）
+    Methods       []MethodInfo // 接口方法信息
+    Deprecated    bool      // 是否已弃用
+    Replacement   string    // 替代接口名称
+}
+
+// MethodInfo 方法信息
+type MethodInfo struct {
+    Name       string   // 方法名称
+    Signature  string   // 方法签名
+    Deprecated bool     // 是否已弃用
+    Since      string   // 引入版本
+    ChangedIn  string   // 修改版本
+}
+
+// InterfaceRegistry 接口注册表
+type InterfaceRegistry interface {
+    RegisterInterface(iface VersionedInterface) error
+    GetInterface(name, version string) (*VersionedInterface, error)
+    ListInterfaces() ([]VersionedInterface, error)
+    CheckCompatibility(provider, required VersionedInterface) (bool, []string)
+}
+```
+
+#### 6.2.3 插件版本兼容性检查
+```go
+// VersionCompatibilityChecker 版本兼容性检查器
+type VersionCompatibilityChecker struct {
+    registry InterfaceRegistry
+}
+
+// CheckPluginCompatibility 检查插件兼容性
+func (c *VersionCompatibilityChecker) CheckPluginCompatibility(
+    pluginDesc PluginDescriptor,
+    requiredInterfaces map[string]string,
+) (bool, []CompatibilityIssue) {
+    var issues []CompatibilityIssue
+    
+    for ifaceName, requiredVersion := range requiredInterfaces {
+        // 获取插件实现的接口版本
+        pluginIface, err := c.registry.GetInterface(ifaceName, pluginDesc.InterfaceVersions[ifaceName])
+        if err != nil {
+            issues = append(issues, CompatibilityIssue{
+                Interface: ifaceName,
+                Issue:     fmt.Sprintf("plugin does not implement interface %s", ifaceName),
+                Severity:  SeverityError,
+            })
+            continue
+        }
+        
+        // 获取要求的接口版本
+        requiredIface, err := c.registry.GetInterface(ifaceName, requiredVersion)
+        if err != nil {
+            issues = append(issues, CompatibilityIssue{
+                Interface: ifaceName,
+                Issue:     fmt.Sprintf("required interface %s version %s not found", ifaceName, requiredVersion),
+                Severity:  SeverityWarning,
+            })
+            continue
+        }
+        
+        // 检查兼容性
+        compatible, methodIssues := c.registry.CheckCompatibility(pluginIface, requiredIface)
+        if !compatible {
+            for _, methodIssue := range methodIssues {
+                issues = append(issues, CompatibilityIssue{
+                    Interface: ifaceName,
+                    Issue:     methodIssue,
+                    Severity:  SeverityError,
+                })
+            }
+        }
+    }
+    
+    return len(issues) == 0, issues
+}
+```
+
+#### 6.2.4 运行时版本适配
+```go
+// VersionAdapter 版本适配器
+type VersionAdapter struct {
+    adapters map[string]map[string]func(interface{}) interface{} // fromVersion -> toVersion -> adapter
+}
+
+// AdaptInterface 适配接口版本
+func (a *VersionAdapter) AdaptInterface(
+    instance interface{},
+    fromVersion, toVersion string,
+    interfaceName string,
+) (interface{}, error) {
+    
+    // 查找适配器链
+    adapterChain, err := a.findAdapterChain(fromVersion, toVersion, interfaceName)
+    if err != nil {
+        return nil, err
+    }
+    
+    // 应用适配器链
+    result := instance
+    for _, adapter := range adapterChain {
+        result = adapter(result)
+    }
+    
+    return result, nil
+}
+
+// RegisterAdapter 注册版本适配器
+func (a *VersionAdapter) RegisterAdapter(
+    fromVersion, toVersion, interfaceName string,
+    adapter func(interface{}) interface{},
+) {
+    if a.adapters[interfaceName] == nil {
+        a.adapters[interfaceName] = make(map[string]func(interface{}) interface{})
+    }
+    
+    key := fmt.Sprintf("%s->%s", fromVersion, toVersion)
+    a.adapters[interfaceName][key] = adapter
+}
+```
+
+#### 6.2.5 向后兼容性保证
+1. **方法签名不变**：已发布接口的方法签名不会改变
+2. **新增方法**：新增方法不影响现有功能
+3. **可选接口**：高级功能通过可选接口实现
+4. **版本探测**：运行时自动检测插件版本并适配
+5. **优雅降级**：插件缺失某些接口时自动降级功能
+
+### 6.3 中间件支持
 ```go
 // StorageMiddleware 存储中间件
 type StorageMiddleware interface {
@@ -1306,6 +1958,6 @@ jobs:
 
 ---
 
-**文档版本**: 1.3  
+**文档版本**: 1.5  
 **最后更新**: 2026-03-05  
 **状态**: 草案
