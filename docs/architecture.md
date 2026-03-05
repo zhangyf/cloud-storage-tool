@@ -89,8 +89,8 @@ type BucketManager interface {
     ExistBucket(ctx context.Context, name string) (bool, error)
     
     // 桶策略管理
-    SetBucketPolicy(ctx context.Context, bucket string, policy *BucketPolicy) error
-    GetBucketPolicy(ctx context.Context, bucket string) (*BucketPolicy, error)
+    SetBucketPolicy(ctx context.Context, bucket, policy string) error
+    GetBucketPolicy(ctx context.Context, bucket) (string, error)
     
     // 桶标签管理
     SetBucketTagging(ctx context.Context, bucket string, tags map[string]string) error
@@ -365,50 +365,8 @@ type Bucket struct {
     SSEConfig      *SSEConfig
     Versioning     VersioningStatus
     ACL            string
-    Policy         *BucketPolicy
+    Policy         string
     LifecycleRules []LifecycleRule
-}
-
-// BucketPolicy 桶策略结构体
-type BucketPolicy struct {
-    // Version 策略版本（如"2012-10-17"）
-    Version string `json:"Version,omitempty"`
-    
-    // ID 策略ID（可选）
-    ID string `json:"Id,omitempty"`
-    
-    // Statement 策略语句列表
-    Statement []PolicyStatement `json:"Statement"`
-}
-
-// PolicyStatement 策略语句
-type PolicyStatement struct {
-    // Sid 语句ID（可选）
-    Sid string `json:"Sid,omitempty"`
-    
-    // Effect 效果：Allow或Deny
-    Effect string `json:"Effect"` // "Allow"或"Deny"
-    
-    // Principal 主体：允许或拒绝访问的实体
-    Principal map[string]interface{} `json:"Principal,omitempty"`
-    
-    // NotPrincipal 非主体：排除的实体
-    NotPrincipal map[string]interface{} `json:"NotPrincipal,omitempty"`
-    
-    // Action 允许或拒绝的操作列表
-    Action interface{} `json:"Action,omitempty"` // string或[]string
-    
-    // NotAction 排除的操作列表
-    NotAction interface{} `json:"NotAction,omitempty"` // string或[]string
-    
-    // Resource 策略适用的资源
-    Resource interface{} `json:"Resource,omitempty"` // string或[]string
-    
-    // NotResource 排除的资源
-    NotResource interface{} `json:"NotResource,omitempty"` // string或[]string
-    
-    // Condition 访问条件
-    Condition map[string]map[string]interface{} `json:"Condition,omitempty"`
 }
 
 // Object 对象信息
@@ -2000,6 +1958,6 @@ jobs:
 
 ---
 
-**文档版本**: 1.6  
+**文档版本**: 1.5  
 **最后更新**: 2026-03-05  
 **状态**: 草案
