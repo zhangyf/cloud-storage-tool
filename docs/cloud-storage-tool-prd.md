@@ -499,7 +499,461 @@ cloud-storage-tool cos lifecycle backup-bucket create \
   --expiration-days 365
 ```
 
-##### 8. 全局选项
+##### 8. 对象操作详细参考
+
+对象操作支持统一的语法，使用URI格式指定对象位置：
+- **本地文件**: `local/path/to/file.txt`
+- **COS对象**: `cos://bucket-name/path/to/object`
+- **S3对象**: `s3://bucket-name/path/to/object`
+
+###### 8.1 对象上传 (Upload)
+
+**命令格式**
+```bash
+cloud-storage-tool cp <source> <destination> [options]
+# 或使用明确的上传命令
+cloud-storage-tool upload <local-file> <cloud-object> [options]
+```
+
+**参数说明**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--recursive` | `-r` | 递归上传目录 | false |
+| `--exclude` | `-e` | 排除模式（支持通配符） | 无 |
+| `--include` | `-i` | 包含模式（支持通配符） | 所有文件 |
+| `--storage-class` | `-s` | 存储类型（STANDARD/STANDARD_IA/ARCHIVE等） | STANDARD |
+| `--metadata` | `-m` | 自定义元数据（key=value格式） | 无 |
+| `--acl` | `-a` | 对象访问权限 | bucket默认 |
+| `--part-size` | `-p` | 分块上传大小（字节） | 10MB |
+| `--threads` | `-t` | 并发上传线程数 | 10 |
+| `--dry-run` | `-d` | 模拟运行，不上传实际文件 | false |
+| `--checksum` | `-c` | 启用完整性校验（MD5/SHA256） | true |
+| `--resume` | `-R` | 支持断点续传 | true |
+
+**使用示例**
+```bash
+# 上传单个文件到COS
+cloud-storage-tool cp local/file.txt cos://my-bucket/path/file.txt
+
+# 上传单个文件到S3
+cloud-storage-tool cp local/file.txt s3://my-bucket/path/file.txt
+
+# 递归上传目录到COS
+cloud-storage-tool cp local/directory/ cos://my-bucket/backup/ --recursive
+
+# 上传并设置存储类型为低频访问
+cloud-storage-tool cp data.log cos://logs-bucket/app/data.log \
+  --storage-class STANDARD_IA
+
+# 上传并设置自定义元数据
+cloud-storage-tool cp image.jpg s3://media-bucket/images/image.jpg \
+  --metadata "author=john,project=website"
+
+# 排除特定文件上传
+cloud-storage-tool cp source/ cos://backup-bucket/source/ \
+  --recursive \
+  --exclude "*.tmp" \
+  --exclude ".git/*"
+
+# 大文件分块上传（100MB分块）
+cloud-storage-tool cp large-file.iso cos://backup-bucket/large-file.iso \
+  --part-size 104857600 \
+  --threads 20
+
+# 模拟上传（不实际执行）
+cloud-storage-tool cp local/dir/ s3://bucket/dir/ --recursive --dry-run
+```
+
+###### 8.2 对象下载 (Download)
+
+**命令格式**
+```bash
+cloud-storage-tool cp <cloud-object> <local-destination> [options]
+# 或使用明确的下载命令
+cloud-storage-tool download <cloud-object> <local-file> [options]
+```
+
+**参数说明**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--recursive` | `-r` | 递归下载目录 | false |
+| `--exclude` | `-e` | 排除模式（支持通配符） | 无 |
+| `--include` | `-i` | 包含模式（支持通配符） | 所有对象 |
+| `--part-size` | `-p` | 分块下载大小（字节） | 10MB |
+| `--threads` | `-t` | 并发下载线程数 | 10 |
+| `--dry-run` | `-d` | 模拟运行，不下载实际文件 | false |
+| `--checksum` | `-c` | 启用完整性校验 | true |
+| `--resume` | `-R` | 支持断点续传 | true |
+| `--force` | `-f` | 强制覆盖已存在的本地文件 | false |
+| `--latest` | `-l` | 只下载最新版本（版本控制桶） | false |
+
+**使用示例**
+```bash
+# 下载单个文件从COS
+cloud-storage-tool cp cos://my-bucket/path/file.txt local/file.txt
+
+# 下载单个文件从S3
+cloud-storage-tool cp s3://my-bucket/path/file.txt local/file.txt
+
+# 递归下载目录从COS
+cloud-storage-tool cp cos://my-bucket/backup/ local/backup/ --recursive
+
+# 下载特定前缀的对象
+cloud-storage-tool cp s3://logs-bucket/app/ local/logs/ \
+  --recursive \
+  --include "*.log" \
+  --exclude "*.tmp"
+
+# 大文件分块下载
+cloud-storage-tool cp cos://backup-bucket/large-file.iso local/large-file.iso \
+  --part-size 104857600 \
+  --threads 20
+
+# 强制覆盖本地文件
+cloud-storage-tool cp s3://bucket/file.txt local/file.txt --force
+
+# 只下载最新版本
+cloud-storage-tool cp cos://versioned-bucket/doc.pdf local/doc.pdf --latest
+
+# 模拟下载（不实际执行）
+cloud-storage-tool cp cos://bucket/dir/ local/dir/ --recursive --dry-run
+```
+
+###### 8.3 对象删除 (Delete)
+
+**命令格式**
+```bash
+cloud-storage-tool rm <cloud-object> [options]
+```
+
+**参数说明**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--recursive` | `-r` | 递归删除目录 | false |
+| `--exclude` | `-e` | 排除模式（支持通配符） | 无 |
+| `--include` | `-i` | 包含模式（支持通配符） | 所有对象 |
+| `--dry-run` | `-d` | 模拟运行，不实际删除 | false |
+| `--force` | `-f` | 跳过确认提示 | false |
+| `--versions` | `-v` | 删除所有版本（版本控制桶） | false |
+| `--older-than` | `-o` | 只删除早于指定天数的对象 | 无 |
+| `--prefix` | `-p` | 删除指定前缀的所有对象 | 无 |
+
+**使用示例**
+```bash
+# 删除单个对象
+cloud-storage-tool rm cos://my-bucket/path/file.txt
+
+# 删除S3对象
+cloud-storage-tool rm s3://my-bucket/path/file.txt
+
+# 递归删除目录（需要确认）
+cloud-storage-tool rm cos://my-bucket/old-data/ --recursive
+
+# 强制删除，跳过确认
+cloud-storage-tool rm s3://logs-bucket/temp/ --recursive --force
+
+# 删除匹配特定模式的对象
+cloud-storage-tool rm cos://bucket/data/ \
+  --recursive \
+  --include "*.tmp" \
+  --exclude "important.tmp"
+
+# 删除所有版本（版本控制桶）
+cloud-storage-tool rm s3://versioned-bucket/document.txt --versions
+
+# 删除30天前的旧文件
+cloud-storage-tool rm cos://backup-bucket/ \
+  --recursive \
+  --older-than 30 \
+  --include "*.log"
+
+# 删除指定前缀的所有对象
+cloud-storage-tool rm s3://bucket/ --prefix "temp/"
+
+# 模拟删除（不实际执行）
+cloud-storage-tool rm cos://bucket/to-delete/ --recursive --dry-run
+```
+
+###### 8.4 对象列表 (List)
+
+**命令格式**
+```bash
+cloud-storage-tool ls <cloud-path> [options]
+```
+
+**参数说明**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--recursive` | `-r` | 递归列出所有对象 | false |
+| `--human-readable` | `-h` | 人类可读的文件大小 | false |
+| `--long` | `-l` | 长格式显示（详细信息） | false |
+| `--all` | `-a` | 显示所有对象（包括删除标记） | false |
+| `--versions` | `-v` | 显示所有版本（版本控制桶） | false |
+| `--limit` | `-n` | 最多显示的对象数量 | 无限制 |
+| `--marker` | `-m` | 起始标记（分页） | 无 |
+| `--prefix` | `-p` | 只显示指定前缀的对象 | 无 |
+| `--delimiter` | `-d` | 目录分隔符 | / |
+| `--format` | `-f` | 输出格式（json, table, csv） | table |
+
+**使用示例**
+```bash
+# 列出桶根目录
+cloud-storage-tool ls cos://my-bucket/
+
+# 列出S3桶目录
+cloud-storage-tool ls s3://my-bucket/path/
+
+# 递归列出所有对象
+cloud-storage-tool ls cos://backup-bucket/ --recursive
+
+# 长格式显示详细信息
+cloud-storage-tool ls s3://logs-bucket/ --long --human-readable
+
+# 显示所有版本（版本控制桶）
+cloud-storage-tool ls cos://versioned-bucket/ --versions
+
+# 只显示特定前缀的对象
+cloud-storage-tool ls s3://bucket/ --prefix "images/"
+
+# 分页列出对象
+cloud-storage-tool ls cos://large-bucket/ --limit 100
+cloud-storage-tool ls cos://large-bucket/ --limit 100 --marker "last-object-key"
+
+# JSON格式输出
+cloud-storage-tool ls s3://bucket/ --format json
+
+# 显示目录结构（使用分隔符）
+cloud-storage-tool ls cos://bucket/ --delimiter "/"
+```
+
+###### 8.5 对象信息查看 (Stat)
+
+**命令格式**
+```bash
+cloud-storage-tool stat <cloud-object> [options]
+```
+
+**参数说明**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--version-id` | `-v` | 指定版本ID（版本控制桶） | 最新版本 |
+| `--format` | `-f` | 输出格式（json, yaml, table） | table |
+| `--metadata-only` | `-m` | 只显示元数据 | false |
+| `--checksum` | `-c` | 包含校验和信息 | false |
+
+**显示信息包括**
+- 对象键、大小、最后修改时间
+- 存储类型、ETag、版本ID
+- 自定义元数据
+- 访问权限
+- 加密信息（如果已加密）
+
+**使用示例**
+```bash
+# 查看对象基本信息
+cloud-storage-tool stat cos://my-bucket/path/file.txt
+
+# 查看S3对象信息
+cloud-storage-tool stat s3://my-bucket/path/file.txt
+
+# 查看特定版本的对象
+cloud-storage-tool stat cos://versioned-bucket/doc.pdf --version-id "abc123"
+
+# JSON格式输出
+cloud-storage-tool stat s3://bucket/object --format json
+
+# 只显示元数据
+cloud-storage-tool stat cos://bucket/object --metadata-only
+
+# 包含校验和信息
+cloud-storage-tool stat s3://bucket/object --checksum
+```
+
+###### 8.6 生成预签名URL (Presign)
+
+**命令格式**
+```bash
+cloud-storage-tool presign <cloud-object> [options]
+```
+
+**参数说明**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--expires` | `-e` | URL有效期（秒） | 3600 |
+| `--method` | `-m` | HTTP方法（GET, PUT, DELETE） | GET |
+| `--response-headers` | `-r` | 响应头设置 | 无 |
+| `--version-id` | `-v` | 指定版本ID（版本控制桶） | 最新版本 |
+| `--content-type` | `-c` | 指定Content-Type（PUT方法） | 自动检测 |
+
+**使用示例**
+```bash
+# 生成1小时有效的下载URL
+cloud-storage-tool presign cos://my-bucket/path/file.txt
+
+# 生成24小时有效的S3下载URL
+cloud-storage-tool presign s3://my-bucket/path/file.txt --expires 86400
+
+# 生成上传URL（PUT方法）
+cloud-storage-tool presign s3://bucket/upload-target \
+  --method PUT \
+  --expires 1800
+
+# 生成带响应头控制的URL
+cloud-storage-tool presign cos://bucket/image.jpg \
+  --response-headers "response-content-type=image/jpeg" \
+  --response-headers "response-content-disposition=attachment"
+
+# 生成特定版本对象的URL
+cloud-storage-tool presign s3://versioned-bucket/doc.pdf \
+  --version-id "xyz789" \
+  --expires 7200
+
+# 生成带Content-Type的上传URL
+cloud-storage-tool presign cos://bucket/upload.json \
+  --method PUT \
+  --content-type "application/json" \
+  --expires 3600
+```
+
+###### 8.7 复制对象 (Copy)
+
+**命令格式**
+```bash
+cloud-storage-tool cp <source> <destination> [options]
+```
+
+**参数说明**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--recursive` | `-r` | 递归复制目录 | false |
+| `--metadata` | `-m` | 复制或替换元数据 | 继承源对象 |
+| `--storage-class` | `-s` | 目标存储类型 | 继承源对象 |
+| `--acl` | `-a` | 目标对象访问权限 | 继承源对象 |
+| `--dry-run` | `-d` | 模拟运行，不实际复制 | false |
+| `--cross-provider` | `-x` | 跨提供商复制（COS ↔ S3） | 自动检测 |
+
+**使用示例**
+```bash
+# 桶内复制对象
+cloud-storage-tool cp cos://bucket/src/file.txt cos://bucket/dst/file.txt
+
+# 跨桶复制
+cloud-storage-tool cp s3://source-bucket/data.log s3://dest-bucket/backup/data.log
+
+# 递归复制目录
+cloud-storage-tool cp cos://bucket/source/ cos://bucket/destination/ --recursive
+
+# 跨提供商复制（COS到S3）
+cloud-storage-tool cp cos://cos-bucket/data s3://s3-bucket/data --cross-provider
+
+# 复制并更改存储类型
+cloud-storage-tool cp s3://bucket/hot-data s3://bucket/cold-data \
+  --storage-class GLACIER
+
+# 复制并设置新元数据
+cloud-storage-tool cp cos://bucket/original cos://bucket/copy \
+  --metadata "copied=true,timestamp=$(date +%s)"
+
+# 模拟复制
+cloud-storage-tool cp cos://src/dir/ cos://dst/dir/ --recursive --dry-run
+```
+
+###### 8.8 移动对象 (Move)
+
+**命令格式**
+```bash
+cloud-storage-tool mv <source> <destination> [options]
+```
+
+**参数说明**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--recursive` | `-r` | 递归移动目录 | false |
+| `--dry-run` | `-d` | 模拟运行，不实际移动 | false |
+| `--force` | `-f` | 强制覆盖目标对象 | false |
+| `--cross-provider` | `-x` | 跨提供商移动（COS ↔ S3） | 自动检测 |
+
+**注意**：移动操作实际是复制+删除，原子性不保证。对于重要数据，建议先复制再删除。
+
+**使用示例**
+```bash
+# 移动单个对象
+cloud-storage-tool mv cos://bucket/old/path.txt cos://bucket/new/path.txt
+
+# 移动S3对象
+cloud-storage-tool mv s3://bucket/source.log s3://bucket/archived/source.log
+
+# 递归移动目录
+cloud-storage-tool mv cos://bucket/temp/ cos://bucket/archive/ --recursive
+
+# 跨提供商移动
+cloud-storage-tool mv cos://cos-bucket/data s3://s3-bucket/data --cross-provider
+
+# 强制覆盖目标
+cloud-storage-tool mv s3://bucket/newer s3://bucket/older --force
+
+# 模拟移动
+cloud-storage-tool mv cos://src/dir/ cos://dst/dir/ --recursive --dry-run
+```
+
+###### 8.9 对象操作综合示例
+
+**场景：日志文件管理**
+```bash
+# 1. 上传当日日志
+cloud-storage-tool cp /var/log/app/app-$(date +%Y%m%d).log \
+  cos://app-logs/$(date +%Y/%m)/app-$(date +%Y%m%d).log \
+  --storage-class STANDARD_IA
+
+# 2. 列出最近7天的日志
+cloud-storage-tool ls cos://app-logs/$(date +%Y/%m)/ \
+  --prefix "app-$(date -d '7 days ago' +%Y%m%d)" \
+  --recursive
+
+# 3. 生成日志下载URL（8小时有效）
+cloud-storage-tool presign cos://app-logs/$(date +%Y/%m)/app-$(date +%Y%m%d).log \
+  --expires 28800
+
+# 4. 删除30天前的旧日志
+cloud-storage-tool rm cos://app-logs/ \
+  --recursive \
+  --older-than 30 \
+  --include "*.log" \
+  --force
+
+# 5. 将重要日志归档到S3
+cloud-storage-tool cp cos://app-logs/important/ \
+  s3://archive-bucket/app-logs/ \
+  --recursive \
+  --storage-class GLACIER \
+  --cross-provider
+```
+
+**场景：网站静态资源管理**
+```bash
+# 1. 上传网站资源
+cloud-storage-tool cp dist/ cos://website-assets/ \
+  --recursive \
+  --metadata "project=website,env=production" \
+  --acl public-read
+
+# 2. 生成资源URL
+cloud-storage-tool presign cos://website-assets/images/logo.png \
+  --expires 31536000 \  # 1年有效
+  --response-headers "response-content-type=image/png"
+
+# 3. 复制到CDN源站
+cloud-storage-tool cp cos://website-assets/ s3://cdn-origin/website/ \
+  --recursive \
+  --cross-provider
+
+# 4. 清理临时文件
+cloud-storage-tool rm cos://website-assets/temp/ \
+  --recursive \
+  --force
+```
+
+##### 9. 全局选项
 
 **通用选项（适用于所有命令）**
 | 选项 | 缩写 | 说明 | 默认值 |
@@ -511,7 +965,7 @@ cloud-storage-tool cos lifecycle backup-bucket create \
 | `--help` | `-h` | 显示命令帮助 | false |
 | `--version` | `-v` | 显示版本信息 | false |
 
-##### 9. 环境变量配置
+##### 10. 环境变量配置
 
 **认证信息（必须通过环境变量设置）**
 ```bash
@@ -525,7 +979,7 @@ export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
 export AWS_REGION="ap-singapore"  # 可选，可覆盖配置文件
 ```
 
-##### 10. 综合使用示例
+##### 11. 综合使用示例
 
 **场景：备份策略设置**
 ```bash
@@ -803,7 +1257,7 @@ logging:
 
 ---
 
-**文档版本**：1.2  
+**文档版本**：1.3  
 **创建日期**：2026-03-05  
 **最后更新**：2026-03-05  
 **状态**：草案
