@@ -177,6 +177,7 @@ type ListObjectsResult struct {
 }
 ```
 
+```go
 // ObjectManager 对象管理接口
 type ObjectManager interface {
     // 对象列表（支持分页）
