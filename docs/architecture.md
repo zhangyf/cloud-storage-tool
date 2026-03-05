@@ -51,32 +51,160 @@ Cloud Storage Tool 采用**插件化架构**，核心是统一的存储接口，
 
 ## 2. 核心接口设计
 
-### 2.1 存储提供商接口
+### 2.1 接口设计原则
+
+遵循**接口隔离原则**，将大的存储提供商接口拆分为多个专注的小接口，便于实现和测试。
+
+#### 2.1.1 基础接口拆分
+
 ```go
-// StorageProvider 统一的存储提供商接口
-type StorageProvider interface {
-    // 桶操作
+// BucketManager 桶管理接口
+type BucketManager interface {
     ListBuckets(ctx context.Context) ([]Bucket, error)
     CreateBucket(ctx context.Context, name, region string) error
     DeleteBucket(ctx context.Context, name string, force bool) error
     GetBucketInfo(ctx context.Context, name string) (BucketInfo, error)
-    
-    // 对象操作
-    ListObjects(ctx context.Context, bucket, prefix string) ([]Object, error)
+    SetBucketPolicy(ctx context.Context, bucket, policy string) error
+    GetBucketPolicy(ctx context.Context, bucket) (string, error)
+}
+
+// ObjectManager 对象管理接口
+type ObjectManager interface {
+    ListObjects(ctx context.Context, bucket, prefix string, recursive bool) ([]Object, error)
     UploadFile(ctx context.Context, bucket, key, filepath string, opts UploadOptions) error
     DownloadFile(ctx context.Context, bucket, key, filepath string, opts DownloadOptions) error
     DeleteObject(ctx context.Context, bucket, key string) error
-    CopyObject(ctx context.Context, src, dst ObjectInfo) error
+    DeleteObjectsBatch(ctx context.Context, bucket string, keys []string) ([]DeleteResult, error)
+    CopyObject(ctx context.Context, srcBucket, srcKey, dstBucket, dstKey string) error
     GetObjectInfo(ctx context.Context, bucket, key string) (ObjectInfo, error)
-    
-    // 高级功能
-    GetPresignedURL(ctx context.Context, bucket, key string, expires time.Duration) (string, error)
+    ObjectExists(ctx context.Context, bucket, key string) (bool, error)
+}
+
+// MultipartUploadManager 分块上传管理接口
+type MultipartUploadManager interface {
+    InitiateMultipartUpload(ctx context.Context, bucket, key string) (string, error)
+    UploadPart(ctx context.Context, bucket, key, uploadID string, partNumber int, data io.Reader) (string, error)
+    CompleteMultipartUpload(ctx context.Context, bucket, key, uploadID string, parts []CompletedPart) error
+    AbortMultipartUpload(ctx context.Context, bucket, key, uploadID string) error
+    ListMultipartUploads(ctx context.Context, bucket, prefix string) ([]MultipartUpload, error)
+}
+
+// ACLManager 访问控制管理接口
+type ACLManager interface {
+    GetObjectACL(ctx context.Context, bucket, key string) (string, error)
     SetObjectACL(ctx context.Context, bucket, key string, acl string) error
-    
-    // 提供商信息
+    GetBucketACL(ctx context.Context, bucket string) (string, error)
+    SetBucketACL(ctx context.Context, bucket string, acl string) error
+}
+
+// LifecycleManager 生命周期管理接口
+type LifecycleManager interface {
+    GetBucketLifecycle(ctx context.Context, bucket string) ([]LifecycleRule, error)
+    SetBucketLifecycle(ctx context.Context, bucket string, rules []LifecycleRule) error
+    DeleteBucketLifecycle(ctx context.Context, bucket string) error
+}
+
+// PresignedURLManager 预签名URL管理接口
+type PresignedURLManager interface {
+    GetPresignedURL(ctx context.Context, bucket, key string, expires time.Duration, method string) (string, error)
+    GeneratePresignedPutURL(ctx context.Context, bucket, key string, expires time.Duration, headers map[string]string) (string, error)
+    GeneratePresignedGetURL(ctx context.Context, bucket, key string, expires time.Duration) (string, error)
+}
+
+// ProviderInfo 提供商信息接口
+type ProviderInfo interface {
     Name() string
     Version() string
     Capabilities() ProviderCapabilities
+    Region() string
+    Supports(feature string) bool
+}
+
+// StorageProvider 统一存储提供商接口（组合接口）
+type StorageProvider interface {
+    BucketManager
+    ObjectManager
+    MultipartUploadManager
+    ACLManager
+    LifecycleManager
+    PresignedURLManager
+    ProviderInfo
+}
+```
+
+### 2.2 新增数据结构
+```go
+// CompletedPart 分块上传完成的部分
+type CompletedPart struct {
+    ETag       string
+    PartNumber int
+}
+
+// MultipartUpload 分块上传信息
+type MultipartUpload struct {
+    UploadID    string
+    Key         string
+    Initiated   time.Time
+    Size        int64
+}
+
+// DeleteResult 批量删除结果
+type DeleteResult struct {
+    Key     string
+    Deleted bool
+    Error   error
+}
+
+// LifecycleRule 生命周期规则
+type LifecycleRule struct {
+    ID                     string
+    Prefix                 string
+    Status                 string // Enabled/Disabled
+    ExpirationDays         int
+    TransitionDays         int
+    TransitionStorageClass string
+    NoncurrentVersionExpirationDays int
+}
+
+// UploadOptions 上传选项
+type UploadOptions struct {
+    ContentType        string
+    ContentEncoding    string
+    Metadata           map[string]string
+    StorageClass       string
+    ACL                string
+    ServerSideEncryption string
+    ChecksumAlgorithm  string // MD5, SHA256, CRC32C等
+    PartSize           int64  // 分块大小
+    Concurrency        int    // 并发数
+}
+
+// DownloadOptions 下载选项
+type DownloadOptions struct {
+    Range              string // HTTP Range头
+    IfMatch            string // ETag条件
+    IfModifiedSince    time.Time
+    IfUnmodifiedSince  time.Time
+    ChecksumValidation bool   // 是否验证校验和
+    Concurrency        int    // 并发下载分块数
+}
+
+// Enhanced ProviderCapabilities 增强的提供商能力
+type ProviderCapabilities struct {
+    SupportsMultipartUpload        bool
+    SupportsPresignedURL           bool
+    SupportsVersioning             bool
+    SupportsLifecycle              bool
+    SupportsServerSideEncryption   bool
+    SupportsBucketPolicy           bool
+    SupportsACL                    bool
+    SupportsObjectLock             bool
+    SupportsIntelligentTiering     bool
+    SupportsBatchOperations        bool
+    MaxPartSize                    int64
+    MaxObjectSize                  int64
+    MaxMultipartParts              int
+    MaxBatchDeleteSize             int
 }
 ```
 
@@ -156,29 +284,378 @@ type ProviderCapabilities struct {
 
 ## 5. 错误处理与恢复
 
-### 5.1 错误分类
+### 5.1 增强的错误分类与标准化
+
+#### 5.1.1 详细错误分类
 ```go
 type ErrorCategory int
 
 const (
-    CategoryNetwork     ErrorCategory = iota // 网络错误
-    CategoryAuth                             // 认证错误
-    CategoryPermission                       // 权限错误
-    CategoryResource                         // 资源错误
-    CategoryValidation                       // 验证错误
-    CategoryInternal                         // 内部错误
+    CategoryNetwork       ErrorCategory = iota // 网络错误（可重试）
+    CategoryAuth                               // 认证错误（不可重试）
+    CategoryPermission                         // 权限错误（不可重试）
+    CategoryResource                           // 资源错误（通常不可重试）
+    CategoryValidation                         // 验证错误（不可重试）
+    CategoryInternal                           // 内部错误（视情况）
+    CategoryRateLimited                        // 限流错误（可重试）
+    CategoryConflict                           // 冲突错误（如并发修改）
+    CategoryTimeout                            // 超时错误（可重试）
+    CategoryQuotaExceeded                      // 配额超出错误（不可重试）
+    CategoryMaintenance                        // 服务维护错误（可重试）
+    CategoryUnavailable                        // 服务不可用错误（可重试）
 )
+
+// 错误码标准化
+const (
+    // 网络相关错误
+    ErrNetworkTimeout      ErrorCode = "NETWORK_TIMEOUT"
+    ErrConnectionFailed    ErrorCode = "CONNECTION_FAILED"
+    ErrSSLHandshakeFailed  ErrorCode = "SSL_HANDSHAKE_FAILED"
+    
+    // 认证授权错误
+    ErrAccessDenied        ErrorCode = "ACCESS_DENIED"
+    ErrInvalidCredentials  ErrorCode = "INVALID_CREDENTIALS"
+    ErrTokenExpired        ErrorCode = "TOKEN_EXPIRED"
+    ErrSignatureInvalid    ErrorCode = "SIGNATURE_INVALID"
+    
+    // 资源错误
+    ErrBucketNotFound      ErrorCode = "BUCKET_NOT_FOUND"
+    ErrObjectNotFound      ErrorCode = "OBJECT_NOT_FOUND"
+    ErrBucketAlreadyExists ErrorCode = "BUCKET_ALREADY_EXISTS"
+    ErrObjectAlreadyExists ErrorCode = "OBJECT_ALREADY_EXISTS"
+    
+    // 验证错误
+    ErrInvalidParameter    ErrorCode = "INVALID_PARAMETER"
+    ErrMissingParameter    ErrorCode = "MISSING_PARAMETER"
+    ErrInvalidRange        ErrorCode = "INVALID_RANGE"
+    ErrChecksumMismatch    ErrorCode = "CHECKSUM_MISMATCH"
+    
+    // 系统错误
+    ErrInternalError       ErrorCode = "INTERNAL_ERROR"
+    ErrOutOfMemory         ErrorCode = "OUT_OF_MEMORY"
+    ErrDiskFull            ErrorCode = "DISK_FULL"
+    
+    // 业务错误
+    ErrRateLimited         ErrorCode = "RATE_LIMITED"
+    ErrQuotaExceeded       ErrorCode = "QUOTA_EXCEEDED"
+    ErrServiceUnavailable  ErrorCode = "SERVICE_UNAVAILABLE"
+    ErrOperationTimeout    ErrorCode = "OPERATION_TIMEOUT"
+)
+
+// StorageError 增强的错误类型
+type StorageError struct {
+    Code         ErrorCode               // 错误码
+    Category     ErrorCategory           // 错误分类
+    HTTPStatus   int                     // HTTP状态码映射
+    Message      string                  // 用户友好错误信息
+    Cause        error                   // 底层错误
+    Context      map[string]interface{}  // 上下文信息
+    Timestamp    time.Time               // 错误发生时间
+    Retryable    bool                    // 是否可重试
+    SuggestedAction string               // 建议操作
+    RequestID    string                  // 请求ID（用于追踪）
+    
+    // 可重试相关字段
+    RetryAfter   time.Duration           // 建议重试等待时间
+    MaxRetries   int                     // 最大重试次数
+}
+
+func (e *StorageError) Error() string {
+    if e.Cause != nil {
+        return fmt.Sprintf("[%s] %s: %v", e.Code, e.Message, e.Cause)
+    }
+    return fmt.Sprintf("[%s] %s", e.Code, e.Message)
+}
+
+// HTTP状态码映射
+func (e *StorageError) MapToHTTPStatus() int {
+    switch e.Category {
+    case CategoryNetwork, CategoryTimeout, CategoryUnavailable:
+        return http.StatusServiceUnavailable
+    case CategoryAuth, CategoryPermission:
+        return http.StatusForbidden
+    case CategoryResource:
+        return http.StatusNotFound
+    case CategoryValidation:
+        return http.StatusBadRequest
+    case CategoryRateLimited:
+        return http.StatusTooManyRequests
+    case CategoryConflict:
+        return http.StatusConflict
+    case CategoryQuotaExceeded:
+        return http.StatusInsufficientStorage
+    default:
+        return http.StatusInternalServerError
+    }
+}
 ```
 
-### 5.2 重试机制
-- 指数退避重试策略
-- 可配置的最大重试次数
-- 可重试错误自动重试
+### 5.2 智能重试机制
 
-### 5.3 事务性操作
-- 重要操作支持回滚
-- 批量操作的原子性保证
-- 操作日志记录便于恢复
+#### 5.2.1 重试配置
+```go
+// RetryConfig 重试配置
+type RetryConfig struct {
+    MaxRetries          int           // 最大重试次数
+    InitialDelay        time.Duration // 初始延迟
+    MaxDelay            time.Duration // 最大延迟
+    BackoffFactor       float64       // 退避因子（指数退避）
+    Jitter              float64       // 抖动因子（随机化延迟）
+    RetryableCodes      []ErrorCode   // 可重试错误码白名单
+    NonRetryableCodes   []ErrorCode   // 不可重试错误码黑名单
+    TimeoutMultiplier   float64       // 超时乘数（每次重试增加超时）
+}
+
+// 默认重试配置
+var DefaultRetryConfig = RetryConfig{
+    MaxRetries:          3,
+    InitialDelay:        100 * time.Millisecond,
+    MaxDelay:            30 * time.Second,
+    BackoffFactor:       2.0,
+    Jitter:              0.1, // 10%抖动
+    RetryableCodes: []ErrorCode{
+        ErrNetworkTimeout,
+        ErrConnectionFailed,
+        ErrRateLimited,
+        ErrServiceUnavailable,
+        ErrOperationTimeout,
+    },
+    NonRetryableCodes: []ErrorCode{
+        ErrAccessDenied,
+        ErrInvalidCredentials,
+        ErrBucketNotFound,
+        ErrObjectNotFound,
+        ErrInvalidParameter,
+        ErrQuotaExceeded,
+    },
+    TimeoutMultiplier: 1.5, // 每次重试增加50%超时
+}
+
+// 操作特定的重试配置
+var OperationRetryConfigs = map[string]RetryConfig{
+    "upload": {
+        MaxRetries:    5,
+        InitialDelay:  1 * time.Second,
+        MaxDelay:      60 * time.Second,
+        BackoffFactor: 2.0,
+    },
+    "download": {
+        MaxRetries:    3,
+        InitialDelay:  500 * time.Millisecond,
+        MaxDelay:      10 * time.Second,
+        BackoffFactor: 1.5,
+    },
+    "delete": {
+        MaxRetries:    2, // 删除操作谨慎重试
+        InitialDelay:  2 * time.Second,
+        MaxDelay:      5 * time.Second,
+        BackoffFactor: 1.2,
+    },
+}
+```
+
+#### 5.2.2 智能重试决策
+```go
+// RetryDecider 重试决策器
+type RetryDecider interface {
+    ShouldRetry(err error, attempt int, operation string) (bool, time.Duration)
+    RecordResult(err error, attempt int, duration time.Duration)
+}
+
+// AdaptiveRetryDecider 自适应重试决策器
+type AdaptiveRetryDecider struct {
+    config        RetryConfig
+    stats         *RetryStats
+    successRate   float64
+    mu            sync.RWMutex
+}
+
+// ShouldRetry 判断是否应该重试
+func (d *AdaptiveRetryDecider) ShouldRetry(err error, attempt int, operation string) (bool, time.Duration) {
+    d.mu.RLock()
+    defer d.mu.RUnlock()
+    
+    // 检查是否超过最大重试次数
+    if attempt >= d.config.MaxRetries {
+        return false, 0
+    }
+    
+    // 转换为StorageError
+    var storageErr *StorageError
+    if errors.As(err, &storageErr) {
+        // 检查错误码黑名单
+        for _, code := range d.config.NonRetryableCodes {
+            if storageErr.Code == code {
+                return false, 0
+            }
+        }
+        
+        // 检查错误码白名单
+        for _, code := range d.config.RetryableCodes {
+            if storageErr.Code == code {
+                delay := d.calculateDelay(attempt, storageErr.RetryAfter)
+                return true, delay
+            }
+        }
+        
+        // 根据错误分类决定
+        if storageErr.Retryable {
+            delay := d.calculateDelay(attempt, storageErr.RetryAfter)
+            return true, delay
+        }
+    }
+    
+    // 默认不重试
+    return false, 0
+}
+
+// calculateDelay 计算重试延迟（指数退避+抖动）
+func (d *AdaptiveRetryDecider) calculateDelay(attempt int, suggested time.Duration) time.Duration {
+    if suggested > 0 {
+        return suggested
+    }
+    
+    // 指数退避：delay = initial * backoff^attempt
+    delay := float64(d.config.InitialDelay) * math.Pow(d.config.BackoffFactor, float64(attempt))
+    
+    // 添加随机抖动：delay = delay * (1 ± jitter)
+    jitter := 1.0 + (rand.Float64()*2-1)*d.config.Jitter
+    delay = delay * jitter
+    
+    // 限制最大延迟
+    if time.Duration(delay) > d.config.MaxDelay {
+        return d.config.MaxDelay
+    }
+    
+    return time.Duration(delay)
+}
+```
+
+### 5.3 增强的事务性操作
+
+#### 5.3.1 操作回滚支持
+```go
+// TransactionalOperation 事务性操作
+type TransactionalOperation struct {
+    ID          string
+    Operation   string
+    State       OperationState
+    Steps       []OperationStep
+    CreatedAt   time.Time
+    UpdatedAt   time.Time
+    RollbackFn  func() error
+    CleanupFn   func() error
+}
+
+// OperationStep 操作步骤
+type OperationStep struct {
+    ID        string
+    Action    string
+    Params    map[string]interface{}
+    Result    interface{}
+    Error     error
+    Committed bool
+    Rollback  func() error
+}
+
+// ExecuteWithRollback 执行带回滚的操作
+func ExecuteWithRollback(ctx context.Context, steps []OperationStep) error {
+    var executedSteps []OperationStep
+    var lastError error
+    
+    for i, step := range steps {
+        // 执行步骤
+        if err := executeStep(ctx, step); err != nil {
+            lastError = err
+            // 回滚已执行的步骤
+            rollbackErr := rollbackSteps(executedSteps)
+            if rollbackErr != nil {
+                return fmt.Errorf("operation failed: %v, rollback also failed: %v", err, rollbackErr)
+            }
+            return fmt.Errorf("operation failed at step %d: %v", i, err)
+        }
+        executedSteps = append(executedSteps, step)
+    }
+    
+    return nil
+}
+
+// rollbackSteps 回滚步骤（逆序执行）
+func rollbackSteps(steps []OperationStep) error {
+    var errors []error
+    
+    // 逆序回滚
+    for i := len(steps) - 1; i >= 0; i-- {
+        step := steps[i]
+        if step.Rollback != nil {
+            if err := step.Rollback(); err != nil {
+                errors = append(errors, fmt.Errorf("rollback step %d failed: %v", i, err))
+            }
+        }
+    }
+    
+    if len(errors) > 0 {
+        return &MultiError{Errors: errors}
+    }
+    return nil
+}
+```
+
+#### 5.3.2 操作日志与恢复
+```go
+// OperationLog 操作日志
+type OperationLog struct {
+    ID          string
+    Operation   string
+    User        string
+    Resource    string
+    Parameters  map[string]interface{}
+    Result      interface{}
+    Error       *StorageError
+    Duration    time.Duration
+    Timestamp   time.Time
+    IP          string
+    UserAgent   string
+    
+    // 恢复信息
+    CanRecover  bool
+    RecoveryFn  func() error
+    Checkpoint  interface{}
+}
+
+// LogRecoverySystem 日志恢复系统
+type LogRecoverySystem struct {
+    logs    []OperationLog
+    mu      sync.RWMutex
+    storage LogStorage
+}
+
+// RecoverFailedOperations 恢复失败的操作
+func (r *LogRecoverySystem) RecoverFailedOperations(ctx context.Context, since time.Time) (int, error) {
+    r.mu.RLock()
+    defer r.mu.RUnlock()
+    
+    var recovered int
+    var errors []error
+    
+    for _, log := range r.logs {
+        if log.Timestamp.After(since) && log.Error != nil && log.CanRecover {
+            if log.RecoveryFn != nil {
+                if err := log.RecoveryFn(); err != nil {
+                    errors = append(errors, fmt.Errorf("recovery failed for log %s: %v", log.ID, err))
+                } else {
+                    recovered++
+                }
+            }
+        }
+    }
+    
+    if len(errors) > 0 {
+        return recovered, &MultiError{Errors: errors}
+    }
+    return recovered, nil
+}
+```
 
 ## 6. 扩展性设计
 
@@ -417,51 +894,258 @@ func (m *BucketManager) CreateBucket(name, region string) error {
 - **错误传播**：Goroutine中的错误要能传播到主流程
 - **资源清理**：Goroutine退出时要清理占用的资源
 
-#### 10.6.2 并发模式
+#### 10.6.2 并发模式（增强版）
+
+**改进的工作池模式**，支持上下文传播、取消机制和资源清理：
+
 ```go
-// 使用工作池模式处理并发任务
-func processConcurrently(tasks []Task, concurrency int) error {
+// processConcurrently 并发处理任务（支持上下文取消）
+func processConcurrently(tasks []Task, concurrency int, ctx context.Context) error {
     var wg sync.WaitGroup
-    taskChan := make(chan Task)
-    errChan := make(chan error, concurrency)
+    taskChan := make(chan Task, concurrency) // 缓冲通道提高性能
+    errChan := make(chan error, len(tasks))
     
-    // 创建工作池
+    // 启动固定数量工作协程
     for i := 0; i < concurrency; i++ {
         wg.Add(1)
-        go func() {
+        go func(workerID int) {
             defer wg.Done()
             for task := range taskChan {
-                if err := processTask(task); err != nil {
-                    errChan <- err
+                // 传播context以支持取消和超时
+                taskCtx := context.WithValue(ctx, "workerID", workerID)
+                if err := processTask(taskCtx, task); err != nil {
+                    select {
+                    case errChan <- err:
+                        // 错误成功发送
+                    case <-ctx.Done():
+                        // 上下文被取消，停止发送错误
+                        return
+                    }
                 }
             }
-        }()
+        }(i)
     }
     
-    // 分发任务
-    for _, task := range tasks {
-        taskChan <- task
+    // 异步分发任务（支持取消）
+    go func() {
+        defer close(taskChan)
+        for _, task := range tasks {
+            select {
+            case taskChan <- task:
+                // 任务成功分发
+            case <-ctx.Done():
+                // 上下文被取消，停止分发
+                return
+            }
+        }
+    }()
+    
+    // 等待所有工作协程完成
+    done := make(chan struct{})
+    go func() {
+        wg.Wait()
+        close(errChan)
+        close(done)
+    }()
+    
+    // 等待完成或取消
+    select {
+    case <-done:
+        // 正常完成，收集错误
+        return collectErrors(errChan)
+    case <-ctx.Done():
+        // 被取消，关闭任务通道让工作协程退出
+        close(taskChan)
+        wg.Wait() // 等待工作协程清理
+        return ctx.Err()
     }
-    close(taskChan)
-    
-    // 等待完成
-    wg.Wait()
-    close(errChan)
-    
-    // 收集错误
+}
+
+// collectErrors 收集并合并错误
+func collectErrors(errChan <-chan error) error {
     var errors []error
     for err := range errChan {
         errors = append(errors, err)
     }
     
-    if len(errors) > 0 {
-        return fmt.Errorf("处理失败: %v", errors)
+    if len(errors) == 0 {
+        return nil
+    } else if len(errors) == 1 {
+        return errors[0]
     }
-    return nil
+    return &MultiError{Errors: errors}
+}
+
+// MultiError 多错误包装器
+type MultiError struct {
+    Errors []error
+}
+
+func (e *MultiError) Error() string {
+    var sb strings.Builder
+    sb.WriteString(fmt.Sprintf("%d errors occurred:\n", len(e.Errors)))
+    for i, err := range e.Errors {
+        sb.WriteString(fmt.Sprintf("\t%d. %v\n", i+1, err))
+    }
+    return sb.String()
 }
 ```
 
-#### 10.6.3 同步原语
+#### 10.6.4 连接池与健康检查
+
+**连接池实现**，支持健康检查和自动重建：
+
+```go
+// ConnectionPool 连接池接口
+type ConnectionPool interface {
+    Get(ctx context.Context) (interface{}, error)
+    Put(conn interface{})
+    Close() error
+    Stats() PoolStats
+}
+
+// HTTPConnectionPool HTTP连接池实现
+type HTTPConnectionPool struct {
+    pool        *sync.Pool
+    dialFunc    func() (interface{}, error)
+    checkFunc   func(conn interface{}) bool
+    maxIdle     int
+    maxOpen     int
+    idleTimeout time.Duration
+    stats       *PoolStats
+    mu          sync.RWMutex
+    closed      bool
+}
+
+// PoolStats 连接池统计信息
+type PoolStats struct {
+    OpenConnections   int64
+    IdleConnections   int64
+    WaitCount         int64
+    WaitDuration      time.Duration
+    MaxIdleClosed     int64
+    MaxLifetimeClosed int64
+    HealthCheckPassed int64
+    HealthCheckFailed int64
+}
+
+// Get 从连接池获取连接（带健康检查）
+func (p *HTTPConnectionPool) Get(ctx context.Context) (interface{}, error) {
+    p.mu.RLock()
+    if p.closed {
+        p.mu.RUnlock()
+        return nil, ErrPoolClosed
+    }
+    p.mu.RUnlock()
+    
+    // 尝试从池中获取
+    if conn := p.pool.Get(); conn != nil {
+        // 健康检查
+        if p.checkFunc(conn) {
+            atomic.AddInt64(&p.stats.HealthCheckPassed, 1)
+            return conn, nil
+        }
+        atomic.AddInt64(&p.stats.HealthCheckFailed, 1)
+    }
+    
+    // 池中无可用连接或健康检查失败，创建新连接
+    return p.dialFunc()
+}
+
+// Put 将连接放回池中
+func (p *HTTPConnectionPool) Put(conn interface{}) {
+    if conn == nil {
+        return
+    }
+    
+    p.mu.RLock()
+    if p.closed {
+        p.mu.RUnlock()
+        return
+    }
+    
+    // 检查连接是否仍然健康
+    if !p.checkFunc(conn) {
+        p.mu.RUnlock()
+        return
+    }
+    
+    p.mu.RUnlock()
+    p.pool.Put(conn)
+}
+```
+
+#### 10.6.5 进度追踪与监控
+
+**并发安全的进度追踪器**：
+
+```go
+// ProgressTracker 进度追踪器
+type ProgressTracker struct {
+    total     int64
+    completed int64
+    failed    int64
+    mu        sync.RWMutex
+    startTime time.Time
+}
+
+// NewProgressTracker 创建进度追踪器
+func NewProgressTracker(total int64) *ProgressTracker {
+    return &ProgressTracker{
+        total:     total,
+        completed: 0,
+        failed:    0,
+        startTime: time.Now(),
+    }
+}
+
+// IncrementCompleted 增加完成计数
+func (p *ProgressTracker) IncrementCompleted() {
+    p.mu.Lock()
+    defer p.mu.Unlock()
+    p.completed++
+}
+
+// IncrementFailed 增加失败计数
+func (p *ProgressTracker) IncrementFailed() {
+    p.mu.Lock()
+    defer p.mu.Unlock()
+    p.failed++
+}
+
+// Progress 获取当前进度
+func (p *ProgressTracker) Progress() (completed, failed, total int64, percentage float64) {
+    p.mu.RLock()
+    defer p.mu.RUnlock()
+    
+    completed = p.completed
+    failed = p.failed
+    total = p.total
+    
+    if total > 0 {
+        percentage = float64(completed+failed) / float64(total) * 100
+    }
+    return
+}
+
+// ETA 计算预计剩余时间
+func (p *ProgressTracker) ETA() time.Duration {
+    p.mu.RLock()
+    defer p.mu.RUnlock()
+    
+    if p.completed == 0 {
+        return 0
+    }
+    
+    elapsed := time.Since(p.startTime)
+    avgTimePerTask := elapsed / time.Duration(p.completed)
+    remainingTasks := p.total - p.completed - p.failed
+    
+    return avgTimePerTask * time.Duration(remainingTasks)
+}
+```
+
+#### 10.6.6 同步原语
 - **互斥锁**：保护共享资源的访问
 - **读写锁**：读多写少的场景
 - **条件变量**：复杂的同步需求
@@ -514,12 +1198,22 @@ func processConcurrently(tasks []Task, concurrency int) error {
 
 | 指标 | 限制值 | 检查工具 | 说明 |
 |------|--------|----------|------|
-| **单文件行数** | ≤ 800行 | `gocyclo` + 自定义检查 | 包括空行和注释，鼓励模块化设计 |
-| **单函数行数** | ≤ 30行 | `funlen` | 函数体行数（不包括签名和注释） |
+| **单文件行数** | ≤ 500行 | `gocyclo` + 自定义检查 | 包括空行和注释，Go社区推荐标准 |
+| **单函数行数** | ≤ 25行 | `funlen` | 函数体行数（不包括签名和注释），从30降至25 |
 | **嵌套层数** | ≤ 3层 | `nestif` | if/for/switch等语句的嵌套深度 |
-| **分支数量** | ≤ 3个 | `cyclop` | 函数中的条件分支数量 |
+| **分支数量** | ≤ 4个 | `cyclop` | 函数中的条件分支数量，从3增至4更实际 |
+| **单文件最大结构体数** | ≤ 5个 | 自定义检查 | 避免文件臃肿，强制模块化设计 |
+| **最大导出符号数** | ≤ 20个 | `revive` | 控制包接口复杂度，促进封装 |
+| **包依赖循环数** | = 0 | `gocyclo` | 强制无循环依赖，保持架构清晰 |
+| **测试覆盖率变化** | ≤ -5% | `coverage` | 防止测试覆盖率退化 |
 
-##### golangci-lint配置示例
+##### 新增关键质量指标说明
+1. **单文件最大结构体数**：控制单个文件中定义的结构体数量，避免功能过于集中
+2. **最大导出符号数**：限制包的公开接口数量，促进接口最小化和封装
+3. **包依赖循环数**：强制消除循环依赖，这是Go项目常见的架构问题
+4. **测试覆盖率变化**：防止在开发过程中测试覆盖率下降超过5%
+
+##### 增强的golangci-lint配置示例
 ```yaml
 # .golangci.yml
 linters:
@@ -528,22 +1222,45 @@ linters:
     - gocyclo     # 圈复杂度检查
     - nestif      # 嵌套if检查
     - cyclop      # 圈复杂度和分支检查
+    - revive      # 导出符号检查
+    - staticcheck # 静态分析
+    - govet       # go vet检查
 
 linters-settings:
   funlen:
-    lines: 30      # 函数最多30行
-    statements: 25 # 函数最多25条语句
+    lines: 25           # 函数最多25行（从30降至25）
+    statements: 20      # 函数最多20条语句（从25降至20）
   
   gocyclo:
-    min-complexity: 10  # 圈复杂度警告阈值
-    # 结合自定义检查控制文件行数
+    min-complexity: 8   # 圈复杂度警告阈值（从10降至8）
+    # 结合自定义检查控制文件行数≤500行
   
   nestif:
-    min-complexity: 4   # 嵌套复杂度阈值
+    min-complexity: 3   # 嵌套复杂度阈值（从4降至3）
   
   cyclop:
-    max-complexity: 3   # 最大圈复杂度（分支数）
+    max-complexity: 4   # 最大圈复杂度（从3增至4）
+    max-branches: 4     # 显式分支限制（新增）
     package-average: 2  # 包平均圈复杂度
+  
+  revive:
+    rules:
+      - name: max-public-structs
+        arguments: [5]  # 单文件最多5个导出结构体
+      - name: max-public-symbols
+        arguments: [20] # 单包最多20个导出符号
+      - name: package-comments
+        severity: warning
+
+# 自定义检查规则（通过脚本实现）
+custom-checks:
+  - name: "no-circular-deps"
+    command: "go mod graph | awk '{print $1}' | sort | uniq -c | awk '$1 > 1 {exit 1}'"
+    description: "检查包依赖循环"
+  
+  - name: "coverage-regression"
+    command: "scripts/check-coverage-regression.sh"
+    description: "检查测试覆盖率退化"
 ```
 
 ##### 质量红线执行机制
@@ -589,6 +1306,6 @@ jobs:
 
 ---
 
-**文档版本**: 1.2  
+**文档版本**: 1.3  
 **最后更新**: 2026-03-05  
 **状态**: 草案
