@@ -708,6 +708,8 @@ cloud-storage-tool rm <cloud-object> [options]
 | `--versions` | `-v` | 删除所有版本（版本控制桶） | false |
 | `--older-than` | `-o` | 只删除早于指定天数的对象 | 无 |
 | `--prefix` | `-p` | 删除指定前缀的所有对象 | 无 |
+| `--list-file` | `-l` | 包含要删除的对象列表文件 | 无 |
+| `--concurrency` | `-c` | 并发删除的最大线程数 | 5 |
 
 **使用示例**
 ```bash
@@ -743,6 +745,23 @@ cloud-storage-tool rm s3://bucket/ --prefix "temp/"
 
 # 模拟删除（不实际执行）
 cloud-storage-tool rm cos://bucket/to-delete/ --recursive --dry-run
+
+# 使用列表文件批量删除
+cloud-storage-tool rm cos://my-bucket/ \
+  --list-file objects-to-delete.txt
+
+# 并发删除大量对象（使用10个线程）
+cloud-storage-tool rm s3://logs-bucket/old-logs/ \
+  --recursive \
+  --concurrency 10 \
+  --include "*.log" \
+  --older-than 90
+
+# 从列表文件并发删除（使用8个线程）
+cloud-storage-tool rm cos://backup-bucket/ \
+  --list-file deletion-list.txt \
+  --concurrency 8 \
+  --dry-run  # 先模拟运行检查
 ```
 
 ###### 2.2.6.4 对象列表 (List)
@@ -1189,7 +1208,7 @@ logging:
 
 ---
 
-**文档版本**：1.8  
+**文档版本**：1.9  
 **创建日期**：2026-03-05  
 **最后更新**：2026-03-05  
 **状态**：草案
