@@ -260,7 +260,6 @@ cloud-storage-tool <provider> rb <bucket-name> [options]
 | `--force` | `-f` | 强制删除非空桶 | false |
 | `--region` | `-r` | 桶所在的区域 | 自动检测 |
 | `--dry-run` | `-d` | 模拟运行，不实际删除 | false |
-| `--recursive` | `-R` | 递归删除桶内所有对象后删除桶 | false |
 
 **使用示例**
 ```bash
@@ -269,9 +268,6 @@ cloud-storage-tool cos rb my-bucket
 
 # 强制删除非空桶
 cloud-storage-tool s3 rb logs-bucket --force
-
-# 递归删除桶内所有对象后删除桶
-cloud-storage-tool cos rb temp-bucket --recursive
 
 # 模拟删除（不实际执行）
 cloud-storage-tool s3 rb test-bucket --dry-run
@@ -1193,7 +1189,7 @@ logging:
 
 ---
 
-**文档版本**：1.7  
+**文档版本**：1.8  
 **创建日期**：2026-03-05  
 **最后更新**：2026-03-05  
 **状态**：草案
