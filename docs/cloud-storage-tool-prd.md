@@ -103,6 +103,426 @@ cloud-storage-tool cos stat cos://bucket/file.txt
 cloud-storage-tool s3 presign s3://bucket/file.txt --expires 3600
 ```
 
+#### 2.2.3 桶管理操作详细参考
+
+##### 1. 桶列表 (List Buckets)
+
+**命令格式**
+```bash
+cloud-storage-tool <provider> ls [options]
+```
+
+**参数说明**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--region` | `-r` | 指定区域（列出该区域的所有桶） | 默认区域 |
+| `--format` | `-f` | 输出格式（json, table, csv） | table |
+| `--limit` | `-l` | 最多显示的桶数量 | 无限制 |
+
+**使用示例**
+```bash
+# 列出所有COS桶
+cloud-storage-tool cos ls
+
+# 列出新加坡区域的所有S3桶
+cloud-storage-tool s3 ls --region ap-singapore
+
+# 以JSON格式输出COS桶列表
+cloud-storage-tool cos ls --format json
+
+# 列出前10个桶
+cloud-storage-tool cos ls --limit 10
+```
+
+##### 2. 桶创建 (Create Bucket)
+
+**命令格式**
+```bash
+cloud-storage-tool <provider> mb <bucket-name> [options]
+```
+
+**参数说明**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--region` | `-r` | 桶所在的区域 | 默认区域 |
+| `--acl` | `-a` | 访问控制权限 | private |
+| `--storage-class` | `-s` | 存储类型（COS: STANDARD/STANDARD_IA/ARCHIVE, S3: STANDARD/STANDARD_IA/ONEZONE_IA/GLACIER） | STANDARD |
+| `--versioning` | `-v` | 是否启用版本控制 | false |
+| `--dry-run` | `-d` | 模拟运行，不实际创建 | false |
+
+**ACL权限选项**
+- **COS**: `private`, `public-read`, `public-read-write`
+- **S3**: `private`, `public-read`, `public-read-write`, `authenticated-read`
+
+**使用示例**
+```bash
+# 在新加坡区域创建私有桶
+cloud-storage-tool cos mb my-backup-bucket --region ap-singapore
+
+# 创建支持版本控制的S3桶
+cloud-storage-tool s3 mb logs-bucket --region us-east-1 --versioning true
+
+# 创建公开只读桶（COS）
+cloud-storage-tool cos mb public-data --region ap-shanghai --acl public-read
+
+# 创建低频访问存储桶
+cloud-storage-tool s3 mb archive-bucket --region us-west-2 --storage-class STANDARD_IA
+
+# 模拟创建（不实际执行）
+cloud-storage-tool cos mb test-bucket --dry-run
+```
+
+##### 3. 桶删除 (Delete Bucket)
+
+**命令格式**
+```bash
+cloud-storage-tool <provider> rb <bucket-name> [options]
+```
+
+**参数说明**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--force` | `-f` | 强制删除非空桶 | false |
+| `--region` | `-r` | 桶所在的区域 | 自动检测 |
+| `--dry-run` | `-d` | 模拟运行，不实际删除 | false |
+| `--recursive` | `-R` | 递归删除桶内所有对象后删除桶 | false |
+
+**使用示例**
+```bash
+# 删除空桶
+cloud-storage-tool cos rb my-bucket
+
+# 强制删除非空桶
+cloud-storage-tool s3 rb logs-bucket --force
+
+# 递归删除桶内所有对象后删除桶
+cloud-storage-tool cos rb temp-bucket --recursive
+
+# 模拟删除（不实际执行）
+cloud-storage-tool s3 rb test-bucket --dry-run
+
+# 删除指定区域的桶
+cloud-storage-tool cos rb old-bucket --region ap-beijing
+```
+
+##### 4. 桶信息查看 (Bucket Information)
+
+**命令格式**
+```bash
+cloud-storage-tool <provider> info <bucket-name> [options]
+```
+
+**参数说明**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--region` | `-r` | 桶所在的区域 | 自动检测 |
+| `--format` | `-f` | 输出格式（json, yaml, table） | table |
+| `--details` | `-d` | 显示详细信息 | false |
+
+**显示信息包括**
+- 桶名称、区域、创建时间
+- 存储类型、访问权限
+- 版本控制状态
+- 对象数量、存储空间使用量
+- 生命周期规则数量
+- 清单配置状态
+
+**使用示例**
+```bash
+# 查看桶基本信息
+cloud-storage-tool cos info my-bucket
+
+# 查看桶详细信息
+cloud-storage-tool s3 info logs-bucket --details
+
+# 以JSON格式输出桶信息
+cloud-storage-tool cos info data-bucket --format json
+
+# 查看指定区域的桶信息
+cloud-storage-tool s3 info archive-bucket --region eu-west-1
+```
+
+##### 5. 桶权限管理 (Bucket ACL)
+
+**命令格式**
+```bash
+cloud-storage-tool <provider> acl <bucket-name> <action> [options]
+```
+
+**子命令**
+| 子命令 | 说明 |
+|--------|------|
+| `get` | 获取桶的ACL设置 |
+| `set` | 设置桶的ACL |
+| `grant` | 授予特定用户/用户组权限 |
+| `revoke` | 撤销特定用户/用户组权限 |
+
+**通用参数**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--region` | `-r` | 桶所在的区域 | 自动检测 |
+| `--format` | `-f` | 输出格式（json, table） | table |
+
+**set子命令参数**
+| 参数 | 缩写 | 说明 | 必需 |
+|------|------|------|------|
+| `--acl` | `-a` | ACL权限字符串 | 是 |
+
+**grant/revoke子命令参数**
+| 参数 | 缩写 | 说明 | 必需 |
+|------|------|------|------|
+| `--grantee` | `-g` | 被授权者（邮箱、用户ID等） | 是 |
+| `--permission` | `-p` | 权限类型（READ, WRITE, FULL_CONTROL等） | 是 |
+
+**使用示例**
+```bash
+# 获取桶的ACL设置
+cloud-storage-tool cos acl my-bucket get
+
+# 设置桶为公开只读
+cloud-storage-tool s3 acl public-bucket set --acl public-read
+
+# 授予特定用户读取权限（S3）
+cloud-storage-tool s3 acl shared-bucket grant \
+  --grantee user@example.com \
+  --permission READ
+
+# 撤销用户权限
+cloud-storage-tool cos acl project-bucket revoke \
+  --grantee 123456789012 \
+  --permission WRITE
+
+# 以JSON格式查看ACL
+cloud-storage-tool s3 acl data-bucket get --format json
+```
+
+##### 6. 桶清单配置 (Bucket Inventory)
+
+**命令格式**
+```bash
+cloud-storage-tool <provider> inventory <bucket-name> <action> [options]
+```
+
+**子命令**
+| 子命令 | 说明 |
+|--------|------|
+| `create` | 创建清单配置 |
+| `list` | 列出所有清单配置 |
+| `get` | 获取特定清单配置 |
+| `update` | 更新清单配置 |
+| `delete` | 删除清单配置 |
+| `enable` | 启用清单配置 |
+| `disable` | 禁用清单配置 |
+
+**create子命令参数**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--name` | `-n` | 清单配置名称 | 必需 |
+| `--destination` | `-d` | 目标桶（存储清单报告的桶） | 必需 |
+| `--prefix` | `-p` | 清单报告存储前缀 | inventory/ |
+| `--format` | `-f` | 报告格式（CSV, Parquet, ORC） | CSV |
+| `--schedule` | `-s` | 生成频率（Daily, Weekly） | Daily |
+| `--included-objects` | `-i` | 包含的对象前缀（多个用逗号分隔） | 所有对象 |
+| `--excluded-objects` | `-e` | 排除的对象前缀（多个用逗号分隔） | 无 |
+| `--optional-fields` | `-o` | 可选字段（Size, LastModifiedDate等） | 基础字段 |
+
+**其他通用参数**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--region` | `-r` | 桶所在的区域 | 自动检测 |
+| `--config-id` | `-c` | 清单配置ID（用于get/update/delete） | 必需 |
+
+**使用示例**
+```bash
+# 创建每日清单配置
+cloud-storage-tool cos inventory data-bucket create \
+  --name daily-inventory \
+  --destination report-bucket \
+  --schedule Daily \
+  --format CSV
+
+# 列出所有清单配置
+cloud-storage-tool s3 inventory logs-bucket list
+
+# 获取特定清单配置详情
+cloud-storage-tool cos inventory backup-bucket get \
+  --config-id config-123
+
+# 更新清单配置，增加可选字段
+cloud-storage-tool s3 inventory data-bucket update \
+  --config-id config-456 \
+  --optional-fields Size,LastModifiedDate,StorageClass
+
+# 删除清单配置
+cloud-storage-tool cos inventory temp-bucket delete \
+  --config-id config-789
+
+# 创建包含特定对象的周报
+cloud-storage-tool s3 inventory app-bucket create \
+  --name weekly-app-inventory \
+  --destination analytics-bucket \
+  --schedule Weekly \
+  --included-objects "app/", "logs/" \
+  --format Parquet
+```
+
+##### 7. 生命周期规则管理 (Lifecycle Rules)
+
+**命令格式**
+```bash
+cloud-storage-tool <provider> lifecycle <bucket-name> <action> [options]
+```
+
+**子命令**
+| 子命令 | 说明 |
+|--------|------|
+| `create` | 创建生命周期规则 |
+| `list` | 列出所有生命周期规则 |
+| `get` | 获取特定规则详情 |
+| `update` | 更新生命周期规则 |
+| `delete` | 删除生命周期规则 |
+
+**create子命令参数**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--id` | `-i` | 规则ID | 必需 |
+| `--prefix` | `-p` | 规则适用的对象前缀 | 所有对象 |
+| `--status` | `-s` | 规则状态（Enabled, Disabled） | Enabled |
+| `--transition-days` | `-t` | 转换到低频存储的天数 | 无 |
+| `--transition-storage-class` | `-c` | 转换后的存储类型 | STANDARD_IA |
+| `--expiration-days` | `-e` | 过期删除的天数 | 无 |
+| `--abort-incomplete-multipart-days` | `-a` | 清理未完成分块上传的天数 | 无 |
+| `--noncurrent-version-transition-days` | `-n` | 非当前版本转换天数 | 无 |
+| `--noncurrent-version-expiration-days` | `-x` | 非当前版本过期天数 | 无 |
+
+**其他通用参数**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--region` | `-r` | 桶所在的区域 | 自动检测 |
+| `--rule-id` | `-r` | 规则ID（用于get/update/delete） | 必需 |
+
+**使用示例**
+```bash
+# 创建30天后转为低频存储的规则
+cloud-storage-tool cos lifecycle data-bucket create \
+  --id transition-to-ia \
+  --prefix "logs/" \
+  --transition-days 30 \
+  --transition-storage-class STANDARD_IA
+
+# 创建90天后删除的规则
+cloud-storage-tool s3 lifecycle temp-bucket create \
+  --id delete-after-90d \
+  --prefix "temp/" \
+  --expiration-days 90
+
+# 列出所有生命周期规则
+cloud-storage-tool cos lifecycle archive-bucket list
+
+# 获取规则详情
+cloud-storage-tool s3 lifecycle data-bucket get \
+  --rule-id rule-123
+
+# 更新规则
+cloud-storage-tool cos lifecycle logs-bucket update \
+  --rule-id old-rule \
+  --expiration-days 180 \
+  --status Enabled
+
+# 删除规则
+cloud-storage-tool s3 lifecycle test-bucket delete \
+  --rule-id unused-rule
+
+# 创建复杂规则：7天转低频，30天转归档，365天删除
+cloud-storage-tool cos lifecycle backup-bucket create \
+  --id comprehensive-rule \
+  --status Enabled \
+  --transition-days 7 \
+  --transition-storage-class STANDARD_IA \
+  --expiration-days 365
+```
+
+##### 8. 全局选项
+
+**通用选项（适用于所有命令）**
+| 选项 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--config` | `-c` | 指定配置文件路径 | ~/.cloud-storage/config.yaml |
+| `--profile` | `-p` | 使用指定的配置profile | default |
+| `--debug` | `-d` | 启用调试模式 | false |
+| `--quiet` | `-q` | 安静模式，只输出必要信息 | false |
+| `--help` | `-h` | 显示命令帮助 | false |
+| `--version` | `-v` | 显示版本信息 | false |
+
+##### 9. 环境变量配置
+
+**认证信息（必须通过环境变量设置）**
+```bash
+# 腾讯云COS
+export TENCENT_COS_SECRET_ID="your-secret-id"
+export TENCENT_COS_SECRET_KEY="your-secret-key"
+
+# AWS S3
+export AWS_ACCESS_KEY_ID="your-access-key-id"
+export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+export AWS_REGION="ap-singapore"  # 可选，可覆盖配置文件
+```
+
+##### 10. 综合使用示例
+
+**场景：备份策略设置**
+```bash
+# 1. 创建备份桶
+cloud-storage-tool cos mb backup-2026 --region ap-singapore --acl private
+
+# 2. 启用版本控制
+cloud-storage-tool cos versioning backup-2026 enable
+
+# 3. 设置清单配置，每天生成报告
+cloud-storage-tool cos inventory backup-2026 create \
+  --name daily-backup-inventory \
+  --destination monitoring-bucket \
+  --schedule Daily
+
+# 4. 设置生命周期规则：30天转低频，90天删除
+cloud-storage-tool cos lifecycle backup-2026 create \
+  --id backup-retention \
+  --transition-days 30 \
+  --expiration-days 90
+
+# 5. 查看桶完整配置
+cloud-storage-tool cos info backup-2026 --details
+```
+
+**场景：日志管理策略**
+```bash
+# 1. 创建日志桶
+cloud-storage-tool s3 mb app-logs --region us-east-1
+
+# 2. 设置ACL为私有
+cloud-storage-tool s3 acl app-logs set --acl private
+
+# 3. 设置生命周期：7天转低频，30天删除
+cloud-storage-tool s3 lifecycle app-logs create \
+  --id logs-retention \
+  --prefix "app/" \
+  --transition-days 7 \
+  --expiration-days 30
+
+# 4. 清理7天前的未完成分块上传
+cloud-storage-tool s3 lifecycle app-logs create \
+  --id abort-multipart \
+  --abort-incomplete-multipart-days 7
+```
+
+---
+
+**注意**：
+1. 所有AK/SK等敏感信息必须通过环境变量配置，不在配置文件中明文存储
+2. 删除操作默认需要确认，使用`--force`跳过确认
+3. 区域参数可覆盖配置文件中的默认设置
+4. 所有命令都支持`--dry-run`模拟运行模式
+
 ## 3. 非功能需求
 
 ### 3.1 性能要求
@@ -323,7 +743,7 @@ logging:
 
 ---
 
-**文档版本**：1.0  
+**文档版本**：1.1  
 **创建日期**：2026-03-05  
 **最后更新**：2026-03-05  
 **状态**：草案
