@@ -394,6 +394,7 @@ cloud-storage-tool <provider> lifecycle <bucket-name> <action> [options]
 | `--abort-incomplete-multipart-days` | `-a` | 清理未完成分块上传的天数 | 无 |
 | `--noncurrent-version-transition-days` | `-n` | 非当前版本转换天数 | 无 |
 | `--noncurrent-version-expiration-days` | `-x` | 非当前版本过期天数 | 无 |
+| `--time-type` | `-T` | 时间类型（mtime:修改时间, atime:访问时间） | mtime |
 
 **其他通用参数**
 | 参数 | 缩写 | 说明 | 默认值 |
@@ -401,19 +402,74 @@ cloud-storage-tool <provider> lifecycle <bucket-name> <action> [options]
 | `--region` | `-r` | 桶所在的区域 | 自动检测 |
 | `--rule-id` | `-r` | 规则ID（用于get/update/delete） | 必需 |
 
+**生命周期规则时间类型说明**
+
+##### 1. 基于修改时间 (mtime) 的生命周期规则
+- **定义**：基于对象的最后修改时间计算生命周期
+- **支持范围**：所有云服务提供商都支持
+- **适用场景**：常规对象管理，如日志文件、备份文件等
+- **支持所有生命周期参数**
+
+##### 2. 基于访问时间 (atime) 的生命周期规则
+- **定义**：基于对象的最后访问时间计算生命周期
+- **支持范围**：有限支持，需要特定功能开启
+- **适用场景**：智能分层存储，根据访问频率优化存储成本
+
+##### 3. 云服务商支持情况
+
+**AWS S3 支持情况：**
+- ✅ **mtime规则**：完全支持所有参数
+- ✅ **atime规则**：通过S3 Intelligent-Tiering支持
+  - 需要启用S3 Intelligent-Tiering存储类型
+  - 支持自动分层优化，基于访问模式
+  - **atime规则限制**：
+    - 不支持`--noncurrent-version-transition-days`
+    - 不支持`--noncurrent-version-expiration-days`
+    - 不支持`--abort-incomplete-multipart-days`
+    - 转换天数通常固定（如30、90、180、365天）
+
+**腾讯云COS 支持情况：**
+- ✅ **mtime规则**：完全支持所有参数
+- ⚠️ **atime规则**：有限支持或需要特殊配置
+  - 可能需要联系技术支持开启
+  - 支持程度可能因区域而异
+  - **建议优先使用mtime规则**
+
+##### 4. atime生命周期规则参数限制
+以下参数在atime生命周期规则中**可能不支持或有限制**：
+- `--noncurrent-version-transition-days`：非当前版本转换
+- `--noncurrent-version-expiration-days`：非当前版本过期
+- `--abort-incomplete-multipart-days`：清理未完成分块上传
+- `--transition-storage-class`：转换目标存储类型可能受限
+
+**使用建议：**
+1. 默认使用`--time-type mtime`（修改时间规则）
+2. 只有在需要智能分层时才使用`--time-type atime`
+3. 使用atime规则前，确认云服务商支持情况
+4. 对于重要数据，建议先进行小规模测试
+
 **使用示例**
 ```bash
-# 创建30天后转为低频存储的规则
+# 创建基于修改时间（mtime）的规则：30天后转为低频存储
 cloud-storage-tool cos lifecycle data-bucket create \
   --id transition-to-ia \
   --prefix "logs/" \
+  --time-type mtime \
   --transition-days 30 \
   --transition-storage-class STANDARD_IA
 
-# 创建90天后删除的规则
+# 创建基于访问时间（atime）的智能分层规则（仅S3支持）
+cloud-storage-tool s3 lifecycle archive-bucket create \
+  --id smart-tiering \
+  --prefix "archive/" \
+  --time-type atime \
+  --transition-days 90
+
+# 创建90天后删除的规则（基于修改时间）
 cloud-storage-tool s3 lifecycle temp-bucket create \
   --id delete-after-90d \
   --prefix "temp/" \
+  --time-type mtime \
   --expiration-days 90
 
 # 列出所有生命周期规则
@@ -433,10 +489,11 @@ cloud-storage-tool cos lifecycle logs-bucket update \
 cloud-storage-tool s3 lifecycle test-bucket delete \
   --rule-id unused-rule
 
-# 创建复杂规则：7天转低频，30天转归档，365天删除
+# 创建复杂规则：7天转低频，365天删除（基于修改时间）
 cloud-storage-tool cos lifecycle backup-bucket create \
   --id comprehensive-rule \
   --status Enabled \
+  --time-type mtime \
   --transition-days 7 \
   --transition-storage-class STANDARD_IA \
   --expiration-days 365
@@ -484,9 +541,10 @@ cloud-storage-tool cos inventory backup-2026 create \
   --destination monitoring-bucket \
   --schedule Daily
 
-# 4. 设置生命周期规则：30天转低频，90天删除
+# 4. 设置生命周期规则：30天转低频，90天删除（基于修改时间）
 cloud-storage-tool cos lifecycle backup-2026 create \
   --id backup-retention \
+  --time-type mtime \
   --transition-days 30 \
   --expiration-days 90
 
@@ -502,16 +560,18 @@ cloud-storage-tool s3 mb app-logs --region us-east-1
 # 2. 设置ACL为私有
 cloud-storage-tool s3 acl app-logs set --acl private
 
-# 3. 设置生命周期：7天转低频，30天删除
+# 3. 设置生命周期：7天转低频，30天删除（基于修改时间）
 cloud-storage-tool s3 lifecycle app-logs create \
   --id logs-retention \
   --prefix "app/" \
+  --time-type mtime \
   --transition-days 7 \
   --expiration-days 30
 
-# 4. 清理7天前的未完成分块上传
+# 4. 清理7天前的未完成分块上传（基于修改时间，atime规则不支持此参数）
 cloud-storage-tool s3 lifecycle app-logs create \
   --id abort-multipart \
+  --time-type mtime \
   --abort-incomplete-multipart-days 7
 ```
 
@@ -743,7 +803,7 @@ logging:
 
 ---
 
-**文档版本**：1.1  
+**文档版本**：1.2  
 **创建日期**：2026-03-05  
 **最后更新**：2026-03-05  
 **状态**：草案
