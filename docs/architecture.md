@@ -250,8 +250,294 @@ type StorageMiddleware interface {
 - 配置迁移工具
 - 版本发布说明
 
+## 10. 代码规范约定
+
+### 10.1 代码组织规范
+
+#### 10.1.1 项目目录结构
+```
+cloud-storage-tool/
+├── cmd/cloud-storage-tool/     # 命令行入口
+│   └── main.go
+├── internal/                   # 内部包（不对外暴露）
+│   ├── commands/              # 命令实现
+│   ├── providers/             # 存储提供商实现
+│   ├── config/                # 配置管理
+│   ├── utils/                 # 工具函数
+│   └── types/                 # 类型定义
+├── pkg/                       # 可对外暴露的包
+│   ├── storage/               # 存储接口定义
+│   └── errors/                # 错误类型定义
+├── scripts/                   # 构建和部署脚本
+├── tests/                     # 测试文件
+├── docs/                      # 文档
+└── .github/workflows/         # CI/CD配置
+```
+
+#### 10.1.2 包设计原则
+- **单一职责**：每个包只关注一个功能领域
+- **依赖倒置**：高层模块不依赖低层模块，都依赖抽象
+- **接口隔离**：定义小而专注的接口
+- **包可见性**：internal包内的代码不对外暴露
+
+### 10.2 命名约定
+
+#### 10.2.1 文件命名
+- **Go源文件**：使用小写蛇形命名，如 `bucket_manager.go`
+- **测试文件**：源文件名加 `_test` 后缀，如 `bucket_manager_test.go`
+- **配置文件**：使用 `.yaml` 或 `.yml` 扩展名
+
+#### 10.2.2 标识符命名
+- **包名**：小写单数名词，简短明了
+- **接口名**：`er` 结尾，如 `Provider`, `Uploader`
+- **变量名**：驼峰式，见名知意
+- **常量名**：全大写蛇形，如 `MAX_RETRY_COUNT`
+
+#### 10.2.3 方法命名
+- **Getter方法**：不需要 `Get` 前缀，如 `Name()` 而不是 `GetName()`
+- **布尔方法**：使用 `Is`, `Has`, `Can` 前缀，如 `IsValid()`
+- **操作方法**：动词开头，如 `UploadFile()`, `DeleteObject()`
+
+### 10.3 错误处理规范
+
+#### 10.3.1 错误定义
+```go
+// 自定义错误类型
+type StorageError struct {
+    Code    ErrorCode
+    Message string
+    Cause   error
+    Context map[string]interface{}
+}
+
+func (e *StorageError) Error() string {
+    return fmt.Sprintf("[%s] %s", e.Code, e.Message)
+}
+```
+
+#### 10.3.2 错误处理原则
+- **错误传播**：低层错误应该包装上下文信息后向上传递
+- **错误日志**：错误发生时要记录足够的上下文信息
+- **用户友好**：给用户的错误信息要友好，技术细节记录在日志中
+- **错误恢复**：可恢复错误应该提供重试机制
+
+#### 10.3.3 错误码定义
+```go
+const (
+    ErrBucketNotFound    ErrorCode = "BUCKET_NOT_FOUND"
+    ErrAccessDenied      ErrorCode = "ACCESS_DENIED"
+    ErrNetworkTimeout    ErrorCode = "NETWORK_TIMEOUT"
+    ErrInvalidParameter  ErrorCode = "INVALID_PARAMETER"
+    ErrInternalError     ErrorCode = "INTERNAL_ERROR"
+)
+```
+
+### 10.4 测试规范
+
+#### 10.4.1 测试覆盖率要求
+- **单元测试**：核心功能覆盖率 ≥ 80%
+- **集成测试**：关键路径覆盖率 ≥ 90%
+- **测试文件**：每个源文件都有对应的测试文件
+
+#### 10.4.2 测试组织
+```go
+// 表驱动测试
+func TestUploadFile(t *testing.T) {
+    testCases := []struct {
+        name        string
+        input       UploadInput
+        expectError bool
+        errorCode   ErrorCode
+    }{
+        {
+            name: "正常上传",
+            input: UploadInput{...},
+            expectError: false,
+        },
+        {
+            name: "文件不存在",
+            input: UploadInput{...},
+            expectError: true,
+            errorCode: ErrFileNotFound,
+        },
+    }
+    
+    for _, tc := range testCases {
+        t.Run(tc.name, func(t *testing.T) {
+            // 测试逻辑
+        })
+    }
+}
+```
+
+#### 10.4.3 Mock和Stub
+- **接口隔离**：通过接口实现测试替身
+- **gomock**：使用gomock生成mock代码
+- **测试数据**：使用testdata目录存放测试数据
+
+### 10.5 文档规范
+
+#### 10.5.1 代码注释
+- **包注释**：每个包都要有包注释，说明包的功能
+- **导出注释**：所有导出的函数、类型、变量都要有注释
+- **示例代码**：复杂功能要提供使用示例
+
+#### 10.5.2 GoDoc要求
+```go
+// BucketManager 桶管理器，负责桶的创建、删除、查询等操作
+//
+// 示例：
+//   manager := NewBucketManager(provider)
+//   err := manager.CreateBucket("my-bucket", "ap-singapore")
+//   if err != nil {
+//       log.Fatal(err)
+//   }
+type BucketManager struct {
+    // 字段说明
+    provider StorageProvider
+}
+
+// CreateBucket 创建存储桶
+//
+// 参数：
+//   name: 桶名称，必须全局唯一
+//   region: 区域代码，如 "ap-singapore"
+//
+// 返回：
+//   error: 创建失败时返回错误信息
+func (m *BucketManager) CreateBucket(name, region string) error {
+    // 实现逻辑
+}
+```
+
+### 10.6 并发规范
+
+#### 10.6.1 Goroutine管理
+- **生命周期**：明确Goroutine的创建和终止
+- **错误传播**：Goroutine中的错误要能传播到主流程
+- **资源清理**：Goroutine退出时要清理占用的资源
+
+#### 10.6.2 并发模式
+```go
+// 使用工作池模式处理并发任务
+func processConcurrently(tasks []Task, concurrency int) error {
+    var wg sync.WaitGroup
+    taskChan := make(chan Task)
+    errChan := make(chan error, concurrency)
+    
+    // 创建工作池
+    for i := 0; i < concurrency; i++ {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            for task := range taskChan {
+                if err := processTask(task); err != nil {
+                    errChan <- err
+                }
+            }
+        }()
+    }
+    
+    // 分发任务
+    for _, task := range tasks {
+        taskChan <- task
+    }
+    close(taskChan)
+    
+    // 等待完成
+    wg.Wait()
+    close(errChan)
+    
+    // 收集错误
+    var errors []error
+    for err := range errChan {
+        errors = append(errors, err)
+    }
+    
+    if len(errors) > 0 {
+        return fmt.Errorf("处理失败: %v", errors)
+    }
+    return nil
+}
+```
+
+#### 10.6.3 同步原语
+- **互斥锁**：保护共享资源的访问
+- **读写锁**：读多写少的场景
+- **条件变量**：复杂的同步需求
+- **原子操作**：简单的计数器等
+
+### 10.7 安全规范
+
+#### 10.7.1 输入验证
+- **边界检查**：所有输入都要检查边界
+- **类型验证**：确保输入符合预期的类型
+- **格式验证**：验证URL、路径等格式
+
+#### 10.7.2 密钥管理
+- **环境变量**：AK/SK等敏感信息必须通过环境变量配置
+- **加密存储**：配置文件中的敏感信息要加密
+- **访问控制**：最小权限原则，按需分配权限
+
+#### 10.7.3 日志安全
+- **脱敏处理**：日志中不能包含敏感信息
+- **访问控制**：日志文件要有适当的权限控制
+- **日志轮转**：定期清理旧日志，避免存储过多敏感信息
+
+### 10.8 性能规范
+
+#### 10.8.1 内存管理
+- **对象复用**：避免频繁创建和销毁对象
+- **缓冲区池**：使用sync.Pool复用缓冲区
+- **内存监控**：监控内存使用，避免内存泄漏
+
+#### 10.8.2 网络优化
+- **连接复用**：复用HTTP连接，减少连接建立开销
+- **压缩传输**：大文件传输时使用压缩
+- **分块处理**：大文件分块传输，支持断点续传
+
+#### 10.8.3 算法复杂度
+- **时间复杂度**：核心操作要控制在O(n)或更好
+- **空间复杂度**：避免大内存占用，使用流式处理
+- **并发优化**：充分利用多核CPU
+
+### 10.9 持续集成规范
+
+#### 10.9.1 代码检查
+- **golangci-lint**：配置统一的代码检查规则
+- **静态分析**：使用go vet进行静态分析
+- **安全扫描**：集成安全扫描工具
+
+#### 10.9.2 构建流程
+```yaml
+# .github/workflows/ci.yml 示例
+name: CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    - name: Run tests
+      run: go test ./... -v -coverprofile=coverage.out
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        files: coverage.out
+```
+
+#### 10.9.3 发布流程
+- **版本号**：遵循语义化版本控制（SemVer）
+- **变更日志**：每次发布都要更新CHANGELOG.md
+- **二进制发布**：提供各平台的二进制文件下载
+
 ---
 
-**文档版本**: 1.0  
+**文档版本**: 1.1  
 **最后更新**: 2026-03-05  
 **状态**: 草案
