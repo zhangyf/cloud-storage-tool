@@ -1347,21 +1347,243 @@ type StorageMiddleware interface {
 
 ## 8. 监控与可观测性
 
-### 8.1 指标收集
-- 操作成功率、延迟
-- 带宽使用情况
-- 并发连接数
+Cloud Storage Tool 提供完整的可观测性支持，基于现代可观测性三大支柱：**指标（Metrics）**、**日志（Logs）** 和 **跟踪（Traces）**，确保系统在生产环境中的透明度和可调试性。
 
-### 8.2 日志分级
-- DEBUG：详细调试信息
-- INFO：常规操作信息
-- WARN：警告信息
-- ERROR：错误信息
+### 8.1 指标收集与监控
 
-### 8.3 跟踪支持
-- 支持分布式跟踪
-- 请求ID贯穿所有操作
-- 便于问题排查
+#### 8.1.1 核心指标分类
+```go
+// 监控指标定义
+type Metrics struct {
+    // 性能指标
+    RequestLatency        prometheus.Histogram // 请求延迟（分桶统计）
+    RequestRate           prometheus.Counter   // 请求速率
+    RequestErrors         prometheus.Counter   // 错误请求数
+    RequestSuccessRate    prometheus.Gauge     // 成功率
+    
+    // 资源指标
+    MemoryUsage           prometheus.Gauge     // 内存使用量
+    CPUUsage              prometheus.Gauge     // CPU使用率
+    GoroutineCount        prometheus.Gauge     // Goroutine数量
+    OpenConnections       prometheus.Gauge     // 打开连接数
+    
+    // 业务指标
+    BucketCount           prometheus.Gauge     // 桶数量
+    ObjectCount           prometheus.Gauge     // 对象总数
+    TotalStorageSize      prometheus.Gauge     // 总存储大小
+    BandwidthUsage        prometheus.Counter   // 带宽使用量
+    
+    // 提供商特定指标
+    ProviderRequests      *prometheus.CounterVec // 按提供商统计的请求
+    ProviderErrors        *prometheus.CounterVec // 按提供商统计的错误
+    ProviderLatency       *prometheus.HistogramVec // 按提供商统计的延迟
+}
+```
+
+#### 8.1.2 指标收集策略
+1. **实时收集**：关键指标实时上报
+2. **聚合统计**：非关键指标定期聚合
+3. **采样策略**：高频率指标采用采样
+4. **维度标签**：支持多维度标签（提供商、区域、操作类型等）
+
+#### 8.1.3 性能指标详情
+- **P99延迟**：99%请求的延迟水平
+- **错误率**：按操作类型和提供商的错误分布
+- **吞吐量**：每秒处理的操作数量
+- **并发度**：同时处理的请求数量
+
+### 8.2 结构化日志系统
+
+#### 8.2.1 日志级别与格式
+```go
+// 结构化日志配置
+type LogConfig struct {
+    Level      string `json:"level"`      // DEBUG, INFO, WARN, ERROR
+    Format     string `json:"format"`     // json, text
+    Output     string `json:"output"`     // stdout, file, syslog
+    FilePath   string `json:"filePath"`   // 日志文件路径
+    MaxSize    int    `json:"maxSize"`    // 最大文件大小(MB)
+    MaxBackups int    `json:"maxBackups"` // 最大备份数量
+    MaxAge     int    `json:"maxAge"`     // 最大保存天数(天)
+    
+    // 结构化字段
+    Fields     map[string]interface{} `json:"fields"` // 固定字段
+}
+```
+
+#### 8.2.2 日志字段规范
+```go
+// 标准日志字段
+type LogEntry struct {
+    Timestamp  string                 `json:"timestamp"`  // ISO8601时间戳
+    Level      string                 `json:"level"`      // 日志级别
+    Message    string                 `json:"message"`    // 日志消息
+    RequestID  string                 `json:"requestId"`  // 请求ID
+    Operation  string                 `json:"operation"`  // 操作类型
+    Provider   string                 `json:"provider"`   // 存储提供商
+    Bucket     string                 `json:"bucket"`     // 桶名称
+    Key        string                 `json:"key"`        // 对象键
+    Duration   int64                  `json:"duration"`   // 操作耗时(ms)
+    Error      string                 `json:"error"`      // 错误信息
+    StackTrace string                 `json:"stackTrace"` // 堆栈跟踪
+    Metadata   map[string]interface{} `json:"metadata"`   // 附加元数据
+}
+```
+
+#### 8.2.3 日志级别使用规范
+- **DEBUG**：详细调试信息，生产环境通常关闭
+- **INFO**：常规操作信息，记录重要状态变化
+- **WARN**：警告信息，需要关注但不需要立即处理
+- **ERROR**：错误信息，需要立即调查和处理
+- **FATAL**：致命错误，导致服务不可用
+
+### 8.3 分布式跟踪系统
+
+#### 8.3.1 跟踪架构
+```go
+// 跟踪配置
+type TraceConfig struct {
+    Enabled       bool   `json:"enabled"`       // 是否启用跟踪
+    Provider      string `json:"provider"`      // Jaeger, Zipkin, OpenTelemetry
+    Endpoint      string `json:"endpoint"`      // 跟踪服务器地址
+    SamplingRate  float64 `json:"samplingRate"` // 采样率(0.0-1.0)
+    BufferSize    int    `json:"bufferSize"`    // 缓冲区大小
+    FlushInterval int    `json:"flushInterval"` // 刷新间隔(ms)
+    
+    // OpenTelemetry配置
+    ServiceName   string `json:"serviceName"`   // 服务名称
+    ServiceVersion string `json:"serviceVersion"` // 服务版本
+    DeploymentEnv string `json:"deploymentEnv"` // 部署环境
+}
+```
+
+#### 8.3.2 跟踪传播
+1. **上下文传播**：通过`context.Context`传递跟踪信息
+2. **跨进程传播**：支持HTTP头部、gRPC元数据等传播方式
+3. **跨提供商传播**：在云存储提供商调用中保持跟踪连续性
+4. **异步操作跟踪**：支持后台任务和异步操作的跟踪
+
+#### 8.3.3 跟踪跨度定义
+```go
+// 跟踪跨度操作
+type TraceSpan struct {
+    // 基础信息
+    TraceID      string    // 跟踪ID
+    SpanID       string    // 跨度ID
+    ParentSpanID string    // 父跨度ID
+    Operation    string    // 操作名称
+    
+    // 时间信息
+    StartTime    time.Time // 开始时间
+    EndTime      time.Time // 结束时间
+    Duration     int64     // 持续时间(ms)
+    
+    // 标签和日志
+    Tags         map[string]string      // 跨度标签
+    Logs         []SpanLog              // 跨度日志
+    Events       []SpanEvent            // 跨度事件
+    
+    // 状态信息
+    Status       SpanStatus             // 跨度状态
+    Error        error                  // 错误信息
+}
+```
+
+### 8.4 告警与健康检查
+
+#### 8.4.1 健康检查端点
+```go
+// 健康检查响应
+type HealthCheckResponse struct {
+    Status      string                 `json:"status"`      // UP, DOWN, DEGRADED
+    Version     string                 `json:"version"`     // 服务版本
+    Timestamp   string                 `json:"timestamp"`   // 检查时间
+    Components  map[string]ComponentHealth `json:"components"` // 组件健康状态
+    Metrics     map[string]interface{} `json:"metrics"`     // 关键指标
+}
+
+// 组件健康状态
+type ComponentHealth struct {
+    Status    string `json:"status"`    // 组件状态
+    Details   string `json:"details"`   // 详细信息
+    Timestamp string `json:"timestamp"` // 最后检查时间
+}
+```
+
+#### 8.4.2 告警规则配置
+```go
+// 告警规则定义
+type AlertRule struct {
+    ID          string   `json:"id"`          // 规则ID
+    Name        string   `json:"name"`        // 规则名称
+    Description string   `json:"description"` // 规则描述
+    Severity    string   `json:"severity"`    // 严重程度(CRITICAL, HIGH, MEDIUM, LOW)
+    
+    // 条件配置
+    Metric      string   `json:"metric"`      // 指标名称
+    Operator    string   `json:"operator"`    // 操作符(>, <, >=, <=, ==, !=)
+    Threshold   float64  `json:"threshold"`   // 阈值
+    Duration    string   `json:"duration"`    // 持续时间(如"5m")
+    
+    // 通知配置
+    NotifyChannels []string `json:"notifyChannels"` // 通知渠道
+    NotifyInterval string   `json:"notifyInterval"` // 通知间隔
+    EscalationPolicy string `json:"escalationPolicy"` // 升级策略
+}
+```
+
+#### 8.4.3 内置告警规则
+1. **高错误率**：错误率超过5%持续5分钟
+2. **高延迟**：P99延迟超过1秒持续3分钟
+3. **资源耗尽**：内存使用超过80%或CPU使用超过90%
+4. **连接异常**：连接失败率超过10%持续2分钟
+5. **存储异常**：存储操作失败率超过3%持续5分钟
+
+### 8.5 可观测性集成
+
+#### 8.5.1 Prometheus集成
+- **指标暴露**：通过`/metrics`端点暴露Prometheus格式指标
+- **服务发现**：支持Kubernetes服务发现
+- **标签管理**：支持动态标签和静态标签
+- **指标聚合**：支持跨实例指标聚合
+
+#### 8.5.2 OpenTelemetry集成
+- **统一标准**：遵循OpenTelemetry规范
+- **多后端支持**：支持Jaeger、Zipkin、AWS X-Ray等后端
+- **自动检测**：支持HTTP、gRPC、数据库等自动检测
+- **上下文传播**：完整的上下文传播支持
+
+#### 8.5.3 ELK/EFK集成
+- **日志收集**：支持Filebeat、Fluentd等日志收集器
+- **索引优化**：针对云存储操作的索引优化
+- **查询优化**：预定义常用查询和仪表板
+- **告警集成**：与Elasticsearch告警集成
+
+#### 8.5.4 Grafana集成
+- **预定义仪表板**：提供开箱即用的Grafana仪表板
+- **模板变量**：支持提供商、区域、操作类型等模板变量
+- **告警面板**：集成Grafana告警功能
+- **数据源支持**：支持Prometheus、Elasticsearch等多种数据源
+
+### 8.6 性能优化与最佳实践
+
+#### 8.6.1 可观测性性能优化
+1. **异步上报**：指标和跟踪数据异步上报，避免阻塞业务逻辑
+2. **批量处理**：日志和跟踪数据批量处理，减少IO操作
+3. **采样策略**：高频操作采用采样，平衡精度和性能
+4. **内存管理**：合理设置缓冲区大小，避免内存泄漏
+
+#### 8.6.2 生产环境最佳实践
+1. **分级部署**：开发、测试、生产环境使用不同的可观测性配置
+2. **数据保留**：根据数据类型设置合理的保留策略
+3. **访问控制**：敏感日志和指标设置访问控制
+4. **灾难恢复**：确保可观测性数据的高可用性和备份
+
+#### 8.6.3 故障排查指南
+1. **问题定位**：使用跟踪ID快速定位问题范围
+2. **根本原因分析**：结合指标、日志和跟踪进行根因分析
+3. **性能调优**：基于指标数据进行性能瓶颈分析
+4. **容量规划**：基于历史数据进行容量预测和规划
 
 ## 9. 部署与维护
 
