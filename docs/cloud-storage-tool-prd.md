@@ -570,7 +570,7 @@ cloud-storage-tool cos lifecycle backup-bucket create \
   --expiration-days 365
 ```
 
-##### 2.2.6 对象操作详细参考
+#### 2.2.6 对象操作详细参考
 
 对象操作支持统一的语法，使用URI格式指定对象位置：
 - **本地文件**: `local/path/to/file.txt`
