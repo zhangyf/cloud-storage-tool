@@ -19,6 +19,7 @@
   - 2.2.4 环境变量配置
   - 2.2.5 桶管理操作详细参考
   - 2.2.6 对象操作详细参考
+  - 2.2.7 同步功能详细参考
 
 ### 3. 非功能需求
 - 3.1 性能要求
@@ -986,7 +987,175 @@ cloud-storage-tool mv s3://bucket/newer s3://bucket/older --force
 cloud-storage-tool mv cos://src/dir/ cos://dst/dir/ --recursive --dry-run
 ```
 
+##### 2.2.7 同步功能详细参考
 
+**同步类型**
+- **本地 ↔ 云同步**：本地文件系统与云存储之间的双向同步
+- **云 ↔ 云同步**：不同云存储服务之间的同步（如 COS ↔ S3）
+- **增量同步**：仅同步发生变化的文件，基于文件大小、修改时间、ETag等
+- **双向同步**：支持两个方向的同步，自动检测和解决冲突
+
+**核心特性**
+- **智能比较**：基于文件属性（大小、修改时间、ETag、校验和）判断文件变化
+- **排除模式**：支持.gitignore风格的排除规则
+- **并发同步**：多线程并发处理，提高同步速度
+- **断点续传**：支持同步中断后继续
+- **冲突解决**：提供多种冲突解决策略（保留最新、保留源、手动处理等）
+
+###### 2.2.7.1 同步命令 (Sync)
+
+**命令格式**
+```bash
+cloud-storage-tool sync <source> <destination> [options]
+```
+
+**参数说明**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--delete` | `-D` | 删除目标端多余的文件 | false |
+| `--dry-run` | `-d` | 模拟运行，显示将要执行的操作 | false |
+| `--exclude` | `-e` | 排除模式（支持多个） | 无 |
+| `--include` | `-i` | 包含模式（支持多个） | 所有文件 |
+| `--recursive` | `-r` | 递归同步目录 | false |
+| `--size-only` | `-s` | 仅比较文件大小 | false |
+| `--checksum` | `-c` | 使用校验和比较（较慢但准确） | false |
+| `--concurrency` | `-C` | 并发同步的线程数 | 5 |
+| `--max-size` | `-m` | 最大文件大小（超过此大小的文件不同步） | 无限制 |
+| `--min-size` | `-n` | 最小文件大小（小于此大小的文件不同步） | 0 |
+| `--time-window` | `-t` | 时间窗口（只同步指定时间内的文件） | 无限制 |
+| `--force` | `-f` | 强制同步，跳过确认 | false |
+| `--verbose` | `-v` | 详细输出模式 | false |
+
+**排除模式语法**
+- `*.tmp` - 排除所有.tmp文件
+- `*.log` - 排除所有.log文件
+- `temp/` - 排除temp目录
+- `!important.log` - 包含important.log（即使被排除）
+- `# 注释` - 注释行
+
+**增量同步机制**
+1. **时间戳比较**：默认基于文件修改时间（mtime）
+2. **大小比较**：文件大小不同则视为变化
+3. **ETag比较**：云存储对象的ETag变化
+4. **校验和比较**：使用MD5/SHA256校验（需要`--checksum`参数）
+5. **组合策略**：可组合使用多种比较方式
+
+**使用示例**
+```bash
+# 本地目录同步到COS（增量同步）
+cloud-storage-tool sync ./local/dir/ cos://bucket/remote/dir/
+
+# COS同步到S3（双向同步）
+cloud-storage-tool sync cos://source-bucket/ s3://dest-bucket/
+
+# 使用排除模式
+cloud-storage-tool sync ./project/ cos://bucket/backup/ \
+  --exclude "*.tmp" \
+  --exclude "*.log" \
+  --exclude "node_modules/" \
+  --include "!important.log"
+
+# 增量同步，仅比较文件大小
+cloud-storage-tool sync ./data/ cos://bucket/data/ --size-only
+
+# 使用校验和确保准确性
+cloud-storage-tool sync cos://source/ s3://dest/ --checksum --concurrency 10
+
+# 删除目标端多余文件
+cloud-storage-tool sync ./src/ cos://bucket/dst/ --delete --dry-run
+
+# 限制文件大小范围
+cloud-storage-tool sync ./uploads/ s3://bucket/uploads/ \
+  --min-size 1024 \
+  --max-size 10485760
+
+# 只同步最近7天的文件
+cloud-storage-tool sync ./logs/ cos://bucket/logs/ \
+  --time-window 7d \
+  --exclude "*.gz"
+
+# 详细输出模式
+cloud-storage-tool sync ./backup/ cos://bucket/backup/ --verbose
+```
+
+###### 2.2.7.2 冲突解决策略
+
+**冲突类型**
+1. **文件修改冲突**：源和目标文件都被修改
+2. **文件删除冲突**：一端删除，另一端修改
+3. **名称冲突**：不同文件重命名冲突
+
+**解决策略**
+```bash
+# 默认策略：保留最新修改的文件
+cloud-storage-tool sync ./dir1/ ./dir2/
+
+# 指定冲突解决策略
+cloud-storage-tool sync ./source/ ./dest/ \
+  --conflict-strategy newer   # 保留更新的文件（默认）
+  
+cloud-storage-tool sync ./source/ ./dest/ \
+  --conflict-strategy source  # 总是保留源文件
+  
+cloud-storage-tool sync ./source/ ./dest/ \
+  --conflict-strategy dest    # 总是保留目标文件
+  
+cloud-storage-tool sync ./source/ ./dest/ \
+  --conflict-strategy larger  # 保留更大的文件
+  
+cloud-storage-tool sync ./source/ ./dest/ \
+  --conflict-strategy ask     # 交互式询问用户
+```
+
+**冲突解决参数**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--conflict-strategy` | `-S` | 冲突解决策略（newer, source, dest, larger, ask） | newer |
+| `--backup` | `-b` | 冲突时创建备份文件 | false |
+| `--backup-dir` | `-B` | 备份目录路径 | 同源目录 |
+| `--suffix` | `-x` | 备份文件后缀 | .backup |
+
+###### 2.2.7.3 同步报告与监控
+
+**生成同步报告**
+```bash
+# 生成JSON格式的同步报告
+cloud-storage-tool sync ./data/ cos://bucket/data/ \
+  --report-format json \
+  --report-file sync-report.json
+
+# 生成HTML格式的同步报告
+cloud-storage-tool sync cos://src/ s3://dest/ \
+  --report-format html \
+  --report-file sync-report.html
+
+# 实时监控同步进度
+cloud-storage-tool sync ./large-dir/ s3://bucket/large-dir/ \
+  --progress \
+  --stats-interval 5s
+```
+
+**报告参数**
+| 参数 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--report-format` | `-F` | 报告格式（json, html, text） | text |
+| `--report-file` | `-R` | 报告文件路径 | 标准输出 |
+| `--progress` | `-p` | 显示进度条 | false |
+| `--stats-interval` | `-I` | 统计信息输出间隔 | 10s |
+| `--summary` | `-y` | 只显示摘要信息 | false |
+
+**同步日志**
+```bash
+# 记录详细同步日志
+cloud-storage-tool sync ./src/ cos://dst/ \
+  --log-level debug \
+  --log-file sync.log
+
+# 结构化日志输出
+cloud-storage-tool sync s3://source/ cos://dest/ \
+  --log-format json \
+  --log-file sync.json
+```
 
 ## 3. 非功能需求
 
@@ -1208,7 +1377,7 @@ logging:
 
 ---
 
-**文档版本**：1.9  
+**文档版本**：2.0  
 **创建日期**：2026-03-05  
 **最后更新**：2026-03-05  
 **状态**：草案
