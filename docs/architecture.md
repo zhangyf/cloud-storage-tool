@@ -175,9 +175,7 @@ type ListObjectsResult struct {
     NextContinuationToken string // 下一页令牌
     CommonPrefixes    []string // 公共前缀（使用Delimiter时）
 }
-```
 
-```go
 // ObjectManager 对象管理接口
 type ObjectManager interface {
     // 对象列表（支持分页）
