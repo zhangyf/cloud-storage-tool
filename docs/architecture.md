@@ -1,5 +1,9 @@
 # 架构设计文档
 
+**版本**: 1.6  
+**最后更新**: 2026-03-05  
+**变更说明**: 修复BucketPolicy接口设计，使用结构化类型替代字符串参数
+
 ## 1. 总体架构
 
 Cloud Storage Tool 采用**插件化架构**，核心是统一的存储接口，各个云服务提供商实现该接口。
@@ -88,9 +92,13 @@ type BucketManager interface {
     // 桶存在性检查
     ExistBucket(ctx context.Context, name string) (bool, error)
     
-    // 桶策略管理
-    SetBucketPolicy(ctx context.Context, bucket, policy string) error
-    GetBucketPolicy(ctx context.Context, bucket) (string, error)
+    // 桶策略管理（使用结构化类型）
+    SetBucketPolicy(ctx context.Context, bucket string, policy *BucketPolicy) error
+    GetBucketPolicy(ctx context.Context, bucket string) (*BucketPolicy, error)
+    
+    // 桶策略便利方法（JSON字符串版本）
+    SetBucketPolicyJSON(ctx context.Context, bucket, policyJSON string) error
+    GetBucketPolicyJSON(ctx context.Context, bucket string) (string, error)
     
     // 桶标签管理
     SetBucketTagging(ctx context.Context, bucket string, tags map[string]string) error
@@ -365,7 +373,7 @@ type Bucket struct {
     SSEConfig      *SSEConfig
     Versioning     VersioningStatus
     ACL            string
-    Policy         string
+    Policy         *BucketPolicy          // 桶策略（结构化类型）
     LifecycleRules []LifecycleRule
 }
 
@@ -421,6 +429,27 @@ type ObjectStat struct {
     Metadata     map[string]string
     ACL          string
     Checksum     string
+}
+
+// 新增：桶策略相关数据结构
+// PolicyStatement 策略声明（IAM策略的基本单元）
+type PolicyStatement struct {
+    Sid         string                         `json:"Sid,omitempty"`          // 策略声明ID
+    Effect      string                         `json:"Effect"`                 // 效果："Allow"或"Deny"
+    Principal   map[string]interface{}         `json:"Principal,omitempty"`   // 主体（用户、角色、服务）
+    NotPrincipal map[string]interface{}        `json:"NotPrincipal,omitempty"` // 排除的主体
+    Action      interface{}                    `json:"Action,omitempty"`      // 操作（string或[]string）
+    NotAction   interface{}                    `json:"NotAction,omitempty"`   // 排除的操作
+    Resource    interface{}                    `json:"Resource,omitempty"`    // 资源（string或[]string）
+    NotResource interface{}                    `json:"NotResource,omitempty"` // 排除的资源
+    Condition   map[string]map[string]interface{} `json:"Condition,omitempty"` // 条件表达式
+}
+
+// BucketPolicy 桶策略（基于IAM策略文档）
+type BucketPolicy struct {
+    Version   string            `json:"Version,omitempty"`   // 策略版本，通常为"2012-10-17"
+    ID        string            `json:"Id,omitempty"`        // 策略ID
+    Statement []PolicyStatement `json:"Statement"`           // 策略声明列表
 }
 
 // 新增：列表选项（支持分页）
