@@ -15,10 +15,10 @@
 - 2.2 命令设计
   - 2.2.1 基础命令结构
   - 2.2.2 具体命令示例
-  - 2.2.3 桶管理操作详细参考
-  - 2.2.4 对象操作详细参考
-  - 2.2.5 全局选项
-  - 2.2.6 环境变量配置
+  - 2.2.3 全局选项
+  - 2.2.4 环境变量配置
+  - 2.2.5 桶管理操作详细参考
+  - 2.2.6 对象操作详细参考
 
 ### 3. 非功能需求
 - 3.1 性能要求
@@ -152,7 +152,33 @@ cloud-storage-tool cos stat cos://bucket/file.txt
 cloud-storage-tool s3 presign s3://bucket/file.txt --expires 3600
 ```
 
-#### 2.2.3 桶管理操作详细参考
+#### 2.2.3 全局选项
+
+##### 通用选项（适用于所有命令）
+| 选项 | 缩写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--config` | `-c` | 指定配置文件路径 | ~/.cloud-storage/config.yaml |
+| `--profile` | `-p` | 使用指定的配置profile | default |
+| `--debug` | `-d` | 启用调试模式 | false |
+| `--quiet` | `-q` | 安静模式，只输出必要信息 | false |
+| `--help` | `-h` | 显示命令帮助 | false |
+| `--version` | `-v` | 显示版本信息 | false |
+
+#### 2.2.4 环境变量配置
+
+##### 认证信息（必须通过环境变量设置）
+```bash
+# 腾讯云COS
+export TENCENT_COS_SECRET_ID="your-secret-id"
+export TENCENT_COS_SECRET_KEY="your-secret-key"
+
+# AWS S3
+export AWS_ACCESS_KEY_ID="your-access-key-id"
+export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+export AWS_REGION="ap-singapore"  # 可选，可覆盖配置文件
+```
+
+#### 2.2.5 桶管理操作详细参考
 
 ##### 1. 桶列表 (List Buckets)
 
@@ -548,14 +574,14 @@ cloud-storage-tool cos lifecycle backup-bucket create \
   --expiration-days 365
 ```
 
-##### 2.2.4 对象操作详细参考
+##### 2.2.6 对象操作详细参考
 
 对象操作支持统一的语法，使用URI格式指定对象位置：
 - **本地文件**: `local/path/to/file.txt`
 - **COS对象**: `cos://bucket-name/path/to/object`
 - **S3对象**: `s3://bucket-name/path/to/object`
 
-###### 2.2.4.1 对象上传 (Upload)
+###### 2.2.6.1 对象上传 (Upload)
 
 **命令格式**
 ```bash
@@ -613,7 +639,7 @@ cloud-storage-tool cp large-file.iso cos://backup-bucket/large-file.iso \
 cloud-storage-tool cp local/dir/ s3://bucket/dir/ --recursive --dry-run
 ```
 
-###### 2.2.4.2 对象下载 (Download)
+###### 2.2.6.2 对象下载 (Download)
 
 **命令格式**
 ```bash
@@ -668,7 +694,7 @@ cloud-storage-tool cp cos://versioned-bucket/doc.pdf local/doc.pdf --latest
 cloud-storage-tool cp cos://bucket/dir/ local/dir/ --recursive --dry-run
 ```
 
-###### 2.2.4.3 对象删除 (Delete)
+###### 2.2.6.3 对象删除 (Delete)
 
 **命令格式**
 ```bash
@@ -723,7 +749,7 @@ cloud-storage-tool rm s3://bucket/ --prefix "temp/"
 cloud-storage-tool rm cos://bucket/to-delete/ --recursive --dry-run
 ```
 
-###### 2.2.4.4 对象列表 (List)
+###### 2.2.6.4 对象列表 (List)
 
 **命令格式**
 ```bash
@@ -775,7 +801,7 @@ cloud-storage-tool ls s3://bucket/ --format json
 cloud-storage-tool ls cos://bucket/ --delimiter "/"
 ```
 
-###### 2.2.4.5 对象信息查看 (Stat)
+###### 2.2.6.5 对象信息查看 (Stat)
 
 **命令格式**
 ```bash
@@ -818,7 +844,7 @@ cloud-storage-tool stat cos://bucket/object --metadata-only
 cloud-storage-tool stat s3://bucket/object --checksum
 ```
 
-###### 2.2.4.6 生成预签名URL (Presign)
+###### 2.2.6.6 生成预签名URL (Presign)
 
 **命令格式**
 ```bash
@@ -864,7 +890,7 @@ cloud-storage-tool presign cos://bucket/upload.json \
   --expires 3600
 ```
 
-###### 2.2.4.7 复制对象 (Copy)
+###### 2.2.6.7 复制对象 (Copy)
 
 **命令格式**
 ```bash
@@ -907,7 +933,7 @@ cloud-storage-tool cp cos://bucket/original cos://bucket/copy \
 cloud-storage-tool cp cos://src/dir/ cos://dst/dir/ --recursive --dry-run
 ```
 
-###### 2.2.4.8 移动对象 (Move)
+###### 2.2.6.8 移动对象 (Move)
 
 **命令格式**
 ```bash
@@ -943,34 +969,6 @@ cloud-storage-tool mv s3://bucket/newer s3://bucket/older --force
 
 # 模拟移动
 cloud-storage-tool mv cos://src/dir/ cos://dst/dir/ --recursive --dry-run
-```
-
-
-
-##### 2.2.5 全局选项
-
-**通用选项（适用于所有命令）**
-| 选项 | 缩写 | 说明 | 默认值 |
-|------|------|------|--------|
-| `--config` | `-c` | 指定配置文件路径 | ~/.cloud-storage/config.yaml |
-| `--profile` | `-p` | 使用指定的配置profile | default |
-| `--debug` | `-d` | 启用调试模式 | false |
-| `--quiet` | `-q` | 安静模式，只输出必要信息 | false |
-| `--help` | `-h` | 显示命令帮助 | false |
-| `--version` | `-v` | 显示版本信息 | false |
-
-##### 2.2.6 环境变量配置
-
-**认证信息（必须通过环境变量设置）**
-```bash
-# 腾讯云COS
-export TENCENT_COS_SECRET_ID="your-secret-id"
-export TENCENT_COS_SECRET_KEY="your-secret-key"
-
-# AWS S3
-export AWS_ACCESS_KEY_ID="your-access-key-id"
-export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
-export AWS_REGION="ap-singapore"  # 可选，可覆盖配置文件
 ```
 
 
@@ -1195,7 +1193,7 @@ logging:
 
 ---
 
-**文档版本**：1.6  
+**文档版本**：1.7  
 **创建日期**：2026-03-05  
 **最后更新**：2026-03-05  
 **状态**：草案
