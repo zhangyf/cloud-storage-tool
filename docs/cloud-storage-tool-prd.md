@@ -577,7 +577,7 @@ cloud-storage-tool cos lifecycle backup-bucket create \
 - **COS对象**: `cos://bucket-name/path/to/object`
 - **S3对象**: `s3://bucket-name/path/to/object`
 
-###### 2.2.6.1 对象上传 (Upload)
+##### 2.2.6.1 对象上传 (Upload)
 
 **命令格式**
 ```bash
@@ -635,7 +635,7 @@ cloud-storage-tool cp large-file.iso cos://backup-bucket/large-file.iso \
 cloud-storage-tool cp local/dir/ s3://bucket/dir/ --recursive --dry-run
 ```
 
-###### 2.2.6.2 对象下载 (Download)
+##### 2.2.6.2 对象下载 (Download)
 
 **命令格式**
 ```bash
@@ -690,7 +690,7 @@ cloud-storage-tool cp cos://versioned-bucket/doc.pdf local/doc.pdf --latest
 cloud-storage-tool cp cos://bucket/dir/ local/dir/ --recursive --dry-run
 ```
 
-###### 2.2.6.3 对象删除 (Delete)
+##### 2.2.6.3 对象删除 (Delete)
 
 **命令格式**
 ```bash
@@ -764,7 +764,7 @@ cloud-storage-tool rm cos://backup-bucket/ \
   --dry-run  # 先模拟运行检查
 ```
 
-###### 2.2.6.4 对象列表 (List)
+##### 2.2.6.4 对象列表 (List)
 
 **命令格式**
 ```bash
@@ -816,7 +816,7 @@ cloud-storage-tool ls s3://bucket/ --format json
 cloud-storage-tool ls cos://bucket/ --delimiter "/"
 ```
 
-###### 2.2.6.5 对象信息查看 (Stat)
+##### 2.2.6.5 对象信息查看 (Stat)
 
 **命令格式**
 ```bash
@@ -859,7 +859,7 @@ cloud-storage-tool stat cos://bucket/object --metadata-only
 cloud-storage-tool stat s3://bucket/object --checksum
 ```
 
-###### 2.2.6.6 生成预签名URL (Presign)
+##### 2.2.6.6 生成预签名URL (Presign)
 
 **命令格式**
 ```bash
@@ -905,7 +905,7 @@ cloud-storage-tool presign cos://bucket/upload.json \
   --expires 3600
 ```
 
-###### 2.2.6.7 复制对象 (Copy)
+##### 2.2.6.7 复制对象 (Copy)
 
 **命令格式**
 ```bash
@@ -948,7 +948,7 @@ cloud-storage-tool cp cos://bucket/original cos://bucket/copy \
 cloud-storage-tool cp cos://src/dir/ cos://dst/dir/ --recursive --dry-run
 ```
 
-###### 2.2.6.8 移动对象 (Move)
+##### 2.2.6.8 移动对象 (Move)
 
 **命令格式**
 ```bash
