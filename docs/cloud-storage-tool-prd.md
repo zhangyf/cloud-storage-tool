@@ -1,5 +1,62 @@
 # 云存储统一管理工具 PRD (Product Requirements Document)
 
+## 目录
+
+### 1. 项目概述
+- 1.1 项目名称
+- 1.2 项目愿景
+- 1.3 核心价值
+
+### 2. 功能需求
+- 2.1 核心功能模块
+  - 2.1.1 桶（Bucket）管理
+  - 2.1.2 对象（Object）管理
+  - 2.1.3 同步功能
+  - 2.1.4 高级功能
+- 2.2 命令设计
+  - 2.2.1 基础命令结构
+  - 2.2.2 具体命令示例
+  - 2.2.3 桶管理操作详细参考
+  - 2.2.4 对象操作详细参考
+  - 2.2.5 全局选项
+  - 2.2.6 环境变量配置
+  - 2.2.7 综合使用示例
+
+### 3. 非功能需求
+- 3.1 性能要求
+- 3.2 可靠性要求
+- 3.3 安全性要求
+- 3.4 易用性要求
+
+### 4. 技术架构
+- 4.1 技术栈
+- 4.2 架构设计
+- 4.3 统一接口设计
+
+### 5. 配置管理
+- 5.1 配置文件格式
+- 5.2 配置来源优先级
+
+### 6. 项目计划
+- 6.1 开发阶段
+- 6.2 里程碑
+
+### 7. 成功标准
+- 7.1 功能标准
+- 7.2 性能标准
+- 7.3 质量标准
+
+### 8. 风险与缓解
+- 8.1 技术风险
+- 8.2 安全风险
+- 8.3 运营风险
+
+### 9. 扩展计划
+
+### 下一步行动建议
+
+---
+
 ## 1. 项目概述
 
 ### 1.1 项目名称
@@ -499,14 +556,14 @@ cloud-storage-tool cos lifecycle backup-bucket create \
   --expiration-days 365
 ```
 
-##### 8. 对象操作详细参考
+##### 2.2.4 对象操作详细参考
 
 对象操作支持统一的语法，使用URI格式指定对象位置：
 - **本地文件**: `local/path/to/file.txt`
 - **COS对象**: `cos://bucket-name/path/to/object`
 - **S3对象**: `s3://bucket-name/path/to/object`
 
-###### 8.1 对象上传 (Upload)
+###### 2.2.4.1 对象上传 (Upload)
 
 **命令格式**
 ```bash
@@ -564,7 +621,7 @@ cloud-storage-tool cp large-file.iso cos://backup-bucket/large-file.iso \
 cloud-storage-tool cp local/dir/ s3://bucket/dir/ --recursive --dry-run
 ```
 
-###### 8.2 对象下载 (Download)
+###### 2.2.4.2 对象下载 (Download)
 
 **命令格式**
 ```bash
@@ -619,7 +676,7 @@ cloud-storage-tool cp cos://versioned-bucket/doc.pdf local/doc.pdf --latest
 cloud-storage-tool cp cos://bucket/dir/ local/dir/ --recursive --dry-run
 ```
 
-###### 8.3 对象删除 (Delete)
+###### 2.2.4.3 对象删除 (Delete)
 
 **命令格式**
 ```bash
@@ -674,7 +731,7 @@ cloud-storage-tool rm s3://bucket/ --prefix "temp/"
 cloud-storage-tool rm cos://bucket/to-delete/ --recursive --dry-run
 ```
 
-###### 8.4 对象列表 (List)
+###### 2.2.4.4 对象列表 (List)
 
 **命令格式**
 ```bash
@@ -726,7 +783,7 @@ cloud-storage-tool ls s3://bucket/ --format json
 cloud-storage-tool ls cos://bucket/ --delimiter "/"
 ```
 
-###### 8.5 对象信息查看 (Stat)
+###### 2.2.4.5 对象信息查看 (Stat)
 
 **命令格式**
 ```bash
@@ -769,7 +826,7 @@ cloud-storage-tool stat cos://bucket/object --metadata-only
 cloud-storage-tool stat s3://bucket/object --checksum
 ```
 
-###### 8.6 生成预签名URL (Presign)
+###### 2.2.4.6 生成预签名URL (Presign)
 
 **命令格式**
 ```bash
@@ -815,7 +872,7 @@ cloud-storage-tool presign cos://bucket/upload.json \
   --expires 3600
 ```
 
-###### 8.7 复制对象 (Copy)
+###### 2.2.4.7 复制对象 (Copy)
 
 **命令格式**
 ```bash
@@ -858,7 +915,7 @@ cloud-storage-tool cp cos://bucket/original cos://bucket/copy \
 cloud-storage-tool cp cos://src/dir/ cos://dst/dir/ --recursive --dry-run
 ```
 
-###### 8.8 移动对象 (Move)
+###### 2.2.4.8 移动对象 (Move)
 
 **命令格式**
 ```bash
@@ -896,64 +953,9 @@ cloud-storage-tool mv s3://bucket/newer s3://bucket/older --force
 cloud-storage-tool mv cos://src/dir/ cos://dst/dir/ --recursive --dry-run
 ```
 
-###### 8.9 对象操作综合示例
 
-**场景：日志文件管理**
-```bash
-# 1. 上传当日日志
-cloud-storage-tool cp /var/log/app/app-$(date +%Y%m%d).log \
-  cos://app-logs/$(date +%Y/%m)/app-$(date +%Y%m%d).log \
-  --storage-class STANDARD_IA
 
-# 2. 列出最近7天的日志
-cloud-storage-tool ls cos://app-logs/$(date +%Y/%m)/ \
-  --prefix "app-$(date -d '7 days ago' +%Y%m%d)" \
-  --recursive
-
-# 3. 生成日志下载URL（8小时有效）
-cloud-storage-tool presign cos://app-logs/$(date +%Y/%m)/app-$(date +%Y%m%d).log \
-  --expires 28800
-
-# 4. 删除30天前的旧日志
-cloud-storage-tool rm cos://app-logs/ \
-  --recursive \
-  --older-than 30 \
-  --include "*.log" \
-  --force
-
-# 5. 将重要日志归档到S3
-cloud-storage-tool cp cos://app-logs/important/ \
-  s3://archive-bucket/app-logs/ \
-  --recursive \
-  --storage-class GLACIER \
-  --cross-provider
-```
-
-**场景：网站静态资源管理**
-```bash
-# 1. 上传网站资源
-cloud-storage-tool cp dist/ cos://website-assets/ \
-  --recursive \
-  --metadata "project=website,env=production" \
-  --acl public-read
-
-# 2. 生成资源URL
-cloud-storage-tool presign cos://website-assets/images/logo.png \
-  --expires 31536000 \  # 1年有效
-  --response-headers "response-content-type=image/png"
-
-# 3. 复制到CDN源站
-cloud-storage-tool cp cos://website-assets/ s3://cdn-origin/website/ \
-  --recursive \
-  --cross-provider
-
-# 4. 清理临时文件
-cloud-storage-tool rm cos://website-assets/temp/ \
-  --recursive \
-  --force
-```
-
-##### 9. 全局选项
+##### 2.2.5 全局选项
 
 **通用选项（适用于所有命令）**
 | 选项 | 缩写 | 说明 | 默认值 |
@@ -965,7 +967,7 @@ cloud-storage-tool rm cos://website-assets/temp/ \
 | `--help` | `-h` | 显示命令帮助 | false |
 | `--version` | `-v` | 显示版本信息 | false |
 
-##### 10. 环境变量配置
+##### 2.2.6 环境变量配置
 
 **认证信息（必须通过环境变量设置）**
 ```bash
@@ -979,7 +981,7 @@ export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
 export AWS_REGION="ap-singapore"  # 可选，可覆盖配置文件
 ```
 
-##### 11. 综合使用示例
+##### 2.2.7 综合使用示例
 
 **场景：备份策略设置**
 ```bash
@@ -1257,7 +1259,7 @@ logging:
 
 ---
 
-**文档版本**：1.3  
+**文档版本**：1.4  
 **创建日期**：2026-03-05  
 **最后更新**：2026-03-05  
 **状态**：草案
