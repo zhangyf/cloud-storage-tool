@@ -180,7 +180,7 @@ export AWS_REGION="ap-singapore"  # 可选，可覆盖配置文件
 
 #### 2.2.5 桶管理操作详细参考
 
-##### 1. 桶列表 (List Buckets)
+##### 2.2.5.1. 桶列表 (List Buckets)
 
 **命令格式**
 ```bash
@@ -209,7 +209,7 @@ cloud-storage-tool cos ls --format json
 cloud-storage-tool cos ls --limit 10
 ```
 
-##### 2. 桶创建 (Create Bucket)
+##### 2.2.5.2. 桶创建 (Create Bucket)
 
 **命令格式**
 ```bash
@@ -247,7 +247,7 @@ cloud-storage-tool s3 mb archive-bucket --region us-west-2 --storage-class STAND
 cloud-storage-tool cos mb test-bucket --dry-run
 ```
 
-##### 3. 桶删除 (Delete Bucket)
+##### 2.2.5.3. 桶删除 (Delete Bucket)
 
 **命令格式**
 ```bash
@@ -276,7 +276,7 @@ cloud-storage-tool s3 rb test-bucket --dry-run
 cloud-storage-tool cos rb old-bucket --region ap-beijing
 ```
 
-##### 4. 桶信息查看 (Bucket Information)
+##### 2.2.5.4. 桶信息查看 (Bucket Information)
 
 **命令格式**
 ```bash
@@ -313,7 +313,7 @@ cloud-storage-tool cos info data-bucket --format json
 cloud-storage-tool s3 info archive-bucket --region eu-west-1
 ```
 
-##### 5. 桶权限管理 (Bucket ACL)
+##### 2.2.5.5. 桶权限管理 (Bucket ACL)
 
 **命令格式**
 ```bash
@@ -367,7 +367,7 @@ cloud-storage-tool cos acl project-bucket revoke \
 cloud-storage-tool s3 acl data-bucket get --format json
 ```
 
-##### 6. 桶清单配置 (Bucket Inventory)
+##### 2.2.5.6. 桶清单配置 (Bucket Inventory)
 
 **命令格式**
 ```bash
@@ -437,7 +437,7 @@ cloud-storage-tool s3 inventory app-bucket create \
   --format Parquet
 ```
 
-##### 7. 生命周期规则管理 (Lifecycle Rules)
+##### 2.2.5.7. 生命周期规则管理 (Lifecycle Rules)
 
 **命令格式**
 ```bash
