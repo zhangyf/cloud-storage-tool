@@ -1,126 +1,110 @@
 # Cloud Storage Tool
 
-统一的多云存储管理工具，支持腾讯云COS和AWS S3。
+一个统一的云存储工具，支持多种云存储服务。
 
-## 特性
+## 功能特性
 
-- **统一接口**：一套命令管理多个云存储服务
-- **完整功能**：桶管理、对象操作、同步迁移
-- **高性能**：多线程并发、断点续传、大文件支持
-- **易用性**：类似aws s3、coscmd的熟悉语法
-- **安全可靠**：完善的错误处理、数据校验、审计日志
+- ✅ 支持腾讯云 COS
+- ✅ 支持阿里云 OSS
+- ✅ 支持 AWS S3
+- ✅ 统一的 API 接口
+- ✅ 命令行工具
+- ✅ 配置文件管理
+- ✅ 完整的错误处理
+- ✅ 详细的日志系统
 
-## 支持的服务
+## 架构设计
 
-- ✅ 腾讯云COS
-- ✅ AWS S3
-- 🔄 阿里云OSS（规划中）
-- 🔄 华为云OBS（规划中）
-- 🔄 Google Cloud Storage（规划中）
+### 核心模块
+1. **config** - 配置管理
+2. **storage** - 存储接口抽象
+3. **providers** - 云存储提供商实现
+4. **cli** - 命令行工具
+5. **utils** - 工具函数
+
+### 接口设计
+```go
+type StorageProvider interface {
+    Upload(localPath, remotePath string) error
+    Download(remotePath, localPath string) error
+    List(prefix string) ([]FileInfo, error)
+    Delete(path string) error
+    Stat(path string) (FileInfo, error)
+}
+```
 
 ## 快速开始
 
-### 安装
-
 ```bash
-# 从源码编译
-git clone https://github.com/zhangyf/cloud-storage-tool.git
-cd cloud-storage-tool
-go build -o cloud-storage-tool ./cmd/cloud-storage-tool
-sudo mv cloud-storage-tool /usr/local/bin/
-```
+# 安装
+go install ./cmd/cloud-storage
 
-### 配置
-
-```bash
-# 初始化配置
-cloud-storage-tool config init
-
-# 测试配置
-cloud-storage-tool config test
-```
-
-### 基本使用
-
-```bash
-# 列出所有桶
-cloud-storage-tool cos ls
-cloud-storage-tool s3 ls
+# 配置
+cloud-storage config init
 
 # 上传文件
-cloud-storage-tool cos cp local/file.txt cos://my-bucket/path/
-cloud-storage-tool s3 cp local/file.txt s3://my-bucket/path/
+cloud-storage upload ./local/file.txt remote/path/file.txt
 
 # 下载文件
-cloud-storage-tool cos cp cos://bucket/file.txt local/path/
-cloud-storage-tool s3 cp s3://bucket/file.txt local/path/
-
-# 同步目录
-cloud-storage-tool sync local/dir/ cos://bucket/path/
-cloud-storage-tool sync cos://bucket1/path/ s3://bucket2/path/
+cloud-storage download remote/path/file.txt ./local/file.txt
 ```
 
-## 详细文档
+## 配置文件示例
 
-- [产品需求文档 (PRD)](docs/cloud-storage-tool-prd.md) - 完整的功能需求和设计
-- [架构设计](docs/architecture.md) - 技术架构和实现细节
-- [API参考](docs/api-reference.md) - 完整的命令参考
-- [开发指南](docs/development.md) - 贡献和开发指南
-
-## 项目结构
-
+```yaml
+default_provider: "tencent_cos"
+providers:
+  tencent_cos:
+    type: "tencent_cos"
+    bucket: "your-bucket"
+    region: "ap-beijing"
+    secret_id: "your-secret-id"
+    secret_key: "your-secret-key"
+  
+  aliyun_oss:
+    type: "aliyun_oss"
+    bucket: "your-bucket"
+    endpoint: "oss-cn-beijing.aliyuncs.com"
+    access_key_id: "your-access-key-id"
+    access_key_secret: "your-access-key-secret"
+  
+  aws_s3:
+    type: "aws_s3"
+    bucket: "your-bucket"
+    region: "us-east-1"
+    access_key_id: "your-access-key-id"
+    secret_access_key: "your-secret-access-key"
 ```
-cloud-storage-tool/
-├── cmd/                    # 命令行入口
-├── internal/              # 内部包
-│   ├── provider/          # 云服务提供商实现
-│   ├── commands/          # 命令实现
-│   ├── config/            # 配置管理
-│   └── utils/             # 工具函数
-├── pkg/                   # 公共包
-├── config/                # 配置文件示例
-├── scripts/               # 构建和部署脚本
-├── tests/                 # 测试文件
-└── docs/                  # 文档
-```
 
-## 开发状态
+## 开发计划
 
-| 模块 | 状态 | 进度 |
-|------|------|------|
-| 基础架构 | 🔄 规划中 | 0% |
-| COS提供商 | 🔄 规划中 | 0% |
-| S3提供商 | 🔄 规划中 | 0% |
-| 桶管理命令 | 🔄 规划中 | 0% |
-| 对象操作命令 | 🔄 规划中 | 0% |
-| 同步功能 | 🔄 规划中 | 0% |
+### 第一阶段：基础架构和配置 ✅ 已完成
+- [x] 项目结构设计
+- [x] 配置管理模块
+- [x] 存储接口抽象
+- [x] 基础命令行框架
+- [x] 错误处理系统
+- [x] 日志系统
+- [x] Makefile 和 Dockerfile
+
+### 第二阶段：提供商实现 🔄 进行中
+- [x] 腾讯云 COS 实现
+- [x] 阿里云 OSS 实现（简化版，待完善）
+- [x] AWS S3 实现
+- [ ] 提供商工厂模式
+- [ ] 配置验证和测试
+
+### 第三阶段：高级功能 📋 待开发
+- [ ] 断点续传
+- [ ] 并行上传/下载
+- [ ] 进度显示
+- [ ] 文件校验
+- [ ] 单元测试
+- [ ] 集成测试
+- [ ] 性能优化
 
 ## 技术栈
-
-- **语言**: Go 1.21+
-- **云服务SDK**:
-  - 腾讯云COS: `github.com/tencentyun/cos-go-sdk-v5`
-  - AWS S3: `github.com/aws/aws-sdk-go-v2/service/s3`
-- **命令行框架**: Cobra + Viper
-- **配置文件**: YAML
-- **测试框架**: Go test
-
-## 许可证
-
-MIT License
-
-## 贡献
-
-欢迎提交Issue和Pull Request！
-
-1. Fork 项目
-2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add some amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 打开Pull Request
-
-## 联系方式
-
-- 项目维护者: zhangyf
-- GitHub: [zhangyf](https://github.com/zhangyf)
-- 问题跟踪: [GitHub Issues](https://github.com/zhangyf/cloud-storage-tool/issues)
+- Go 1.21+
+- 标准库优先
+- YAML 配置文件
+- Cobra CLI 框架
