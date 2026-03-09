@@ -3,11 +3,8 @@ package storage
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"time"
-
-	"github.com/zhangyf/cloud-storage-tool/internal/providers"
 )
 
 // FileInfo 表示文件或对象的元数据信息
@@ -81,7 +78,6 @@ type ProviderType string
 
 const (
 	ProviderTencentCOS ProviderType = "tencent_cos"
-	ProviderAliyunOSS  ProviderType = "aliyun_oss"
 	ProviderAWSS3      ProviderType = "aws_s3"
 )
 
@@ -129,20 +125,6 @@ type Credentials struct {
 	AWSAccessKeyID     string
 	AWSSecretAccessKey string
 	AWSSessionToken    string
-}
-
-// NewProvider 根据配置创建存储提供商实例
-func NewProvider(config Config) (StorageProvider, error) {
-	switch config.Type {
-	case ProviderTencentCOS:
-		return providers.NewTencentCOSProvider(config)
-	case ProviderAliyunOSS:
-		return providers.NewAliyunOSSProvider(config)
-	case ProviderAWSS3:
-		return providers.NewAWSS3Provider(config)
-	default:
-		return nil, fmt.Errorf("不支持的存储提供商类型: %s", config.Type)
-	}
 }
 
 // Common errors
@@ -235,14 +217,15 @@ type DefaultProviderFactory struct{}
 
 // Create 创建存储提供商实例
 func (f *DefaultProviderFactory) Create(config Config) (StorageProvider, error) {
-	return NewProvider(config)
+	// 这个实现需要由具体的工厂提供
+	// 这里返回错误，表示需要具体的工厂实现
+	return nil, errors.New("DefaultProviderFactory.Create: 需要具体的工厂实现")
 }
 
 // SupportedTypes 返回支持的提供商类型
 func (f *DefaultProviderFactory) SupportedTypes() []ProviderType {
 	return []ProviderType{
 		ProviderTencentCOS,
-		ProviderAliyunOSS,
 		ProviderAWSS3,
 	}
 }

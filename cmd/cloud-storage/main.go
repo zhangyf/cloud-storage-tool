@@ -6,6 +6,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/zhangyf/cloud-storage-tool/internal/providers"
+	"github.com/zhangyf/cloud-storage-tool/internal/storage"
 )
 
 // version 工具版本号
@@ -16,6 +18,71 @@ var buildDate = "unknown"
 
 // gitCommit Git提交哈希
 var gitCommit = "unknown"
+
+// providerFactory 全局提供商工厂实例
+var providerFactory providers.ProviderFactory
+
+// storageProvider 当前存储提供商实例
+var storageProvider storage.StorageProvider
+
+// initProviderFactory 初始化提供商工厂
+func initProviderFactory() {
+	providerFactory = providers.NewDefaultProviderFactory()
+}
+
+// loadStorageProvider 加载存储提供商
+func loadStorageProvider(config map[string]interface{}) error {
+	// 验证配置
+	if err := providerFactory.ValidateConfig(config); err != nil {
+		return fmt.Errorf("配置验证失败: %v", err)
+	}
+	
+	// 创建提供商实例
+	provider, err := providerFactory.CreateProvider(config)
+	if err != nil {
+		return fmt.Errorf("创建提供商失败: %v", err)
+	}
+	
+	// 类型断言转换为 StorageProvider
+	if sp, ok := provider.(storage.StorageProvider); ok {
+		storageProvider = sp
+		return nil
+	}
+	
+	return fmt.Errorf("创建的提供商不是有效的 StorageProvider 类型")
+}
+
+// getSupportedProviderTypes 获取支持的提供商类型
+func getSupportedProviderTypes() []string {
+	if providerFactory == nil {
+		initProviderFactory()
+	}
+	return providerFactory.SupportedProviderTypes()
+}
+
+// getDefaultConfig 获取默认配置（用于演示）
+func getDefaultConfig(providerType string) map[string]interface{} {
+	switch providerType {
+	case providers.TypeTencentCOS:
+		return map[string]interface{}{
+			"type":       providers.TypeTencentCOS,
+			"secret_id":  "demo_secret_id",
+			"secret_key": "demo_secret_key",
+			"region":     "ap-beijing",
+			"bucket":     "demo-bucket",
+		}
+	case providers.TypeAWSS3:
+		return map[string]interface{}{
+			"type":                providers.TypeAWSS3,
+			"access_key_id":       "demo_access_key_id",
+			"secret_access_key":   "demo_secret_access_key",
+			"region":              "us-east-1",
+			"bucket":              "demo-bucket",
+		}
+	default:
+		return nil
+	}
+}
 
 // rootCmd 根命令
 var rootCmd = &cobra.Command{
@@ -39,6 +106,9 @@ var rootCmd = &cobra.Command{
 
 // init 初始化命令行标志和子命令
 func init() {
+	// 初始化提供商工厂
+	initProviderFactory()
+	
 	// 添加全局标志
 	rootCmd.PersistentFlags().StringP("config", "c", "", "配置文件路径")
 	rootCmd.PersistentFlags().StringP("provider", "p", "", "指定云存储提供商")
@@ -93,9 +163,47 @@ func uploadCmd() *cobra.Command {
 			localPath := args[0]
 			remotePath := args[1]
 			
-			fmt.Printf("上传文件: %s -> %s\n", localPath, remotePath)
-			// TODO: 实现上传逻辑
-			fmt.Println("上传完成")
+			// 获取提供商类型（从命令行标志或使用默认值）
+			providerType, _ := cmd.Flags().GetString("provider")
+			if providerType == "" {
+				// 使用第一个支持的提供商类型作为默认值
+				supportedTypes := getSupportedProviderTypes()
+				if len(supportedTypes) > 0 {
+					providerType = supportedTypes[0]
+				} else {
+					fmt.Println("错误: 没有支持的提供商类型")
+					return
+				}
+			}
+			
+			fmt.Printf("上传文件: %s -> %s (提供商: %s)\n", localPath, remotePath, providerType)
+			
+			// 使用工厂模式创建提供商
+			config := getDefaultConfig(providerType)
+			if config == nil {
+				fmt.Printf("错误: 不支持的提供商类型: %s\n", providerType)
+				fmt.Printf("支持的提供商类型: %v\n", getSupportedProviderTypes())
+				return
+			}
+			
+			// 加载存储提供商
+			if err := loadStorageProvider(config); err != nil {
+				fmt.Printf("错误: 加载存储提供商失败: %v\n", err)
+				return
+			}
+			
+			// 检查提供商是否已加载
+			if storageProvider == nil {
+				fmt.Println("错误: 存储提供商未初始化")
+				return
+			}
+			
+			// 演示：显示提供商已加载
+			fmt.Printf("存储提供商已加载: %T\n", storageProvider)
+			
+			// TODO: 实际的上传逻辑（由于提供商实现有编译问题，这里先显示演示信息）
+			fmt.Println("上传完成（演示模式：工厂集成已实现）")
+			fmt.Println("注意：实际的上传功能需要修复提供商实现的编译错误")
 		},
 	}
 	

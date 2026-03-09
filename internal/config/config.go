@@ -68,15 +68,6 @@ func DefaultConfig() *Config {
 				Timeout:   30,
 				MaxRetries: 3,
 			},
-			"aliyun_oss": {
-				Type:            "aliyun_oss",
-				Bucket:          "",
-				Endpoint:        "oss-cn-beijing.aliyuncs.com",
-				AccessKeyID:     "",
-				AccessKeySecret: "",
-				Timeout:         30,
-				MaxRetries:      3,
-			},
 			"aws_s3": {
 				Type:              "aws_s3",
 				Bucket:            "",
@@ -206,18 +197,6 @@ func (p *ProviderConfig) Validate() error {
 		if p.SecretKey == "" {
 			return errors.New("腾讯云COS SecretKey不能为空")
 		}
-		
-	case "aliyun_oss":
-		if p.Endpoint == "" {
-			return errors.New("阿里云OSS端点不能为空")
-		}
-		if p.AccessKeyID == "" {
-			return errors.New("阿里云OSS AccessKeyID不能为空")
-		}
-		if p.AccessKeySecret == "" {
-			return errors.New("阿里云OSS AccessKeySecret不能为空")
-		}
-		
 	case "aws_s3":
 		if p.Region == "" {
 			return errors.New("AWS S3区域不能为空")

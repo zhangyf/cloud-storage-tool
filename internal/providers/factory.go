@@ -7,13 +7,14 @@
 // 4. 错误处理：处理各种错误情况
 package providers
 
+
+import (
+	"github.com/zhangyf/cloud-storage-tool/internal/storage"
+)
 // ProviderType 提供商类型常量
 const (
 	// TypeTencentCOS 腾讯云COS提供商类型
 	TypeTencentCOS = "tencent_cos"
-	
-	// TypeAliyunOSS 阿里云OSS提供商类型
-	TypeAliyunOSS = "aliyun_oss"
 	
 	// TypeAWSS3 AWS S3提供商类型
 	TypeAWSS3 = "aws_s3"
@@ -109,8 +110,6 @@ func (f *DefaultProviderFactory) CreateProvider(config interface{}) (interface{}
 	switch providerType {
 	case TypeTencentCOS:
 		return f.createTencentCOS(configMap)
-	case TypeAliyunOSS:
-		return f.createAliyunOSS(configMap)
 	case TypeAWSS3:
 		return f.createAWSS3(configMap)
 	default:
@@ -132,7 +131,11 @@ func (f *DefaultProviderFactory) ValidateConfig(config interface{}) error {
 	// 检查提供商类型
 	providerType, ok := configMap["type"].(string)
 	if !ok {
-		return NewFactoryError(ErrCodeConfigMissingField, "缺少提供商类型(type)字段")
+		return &FactoryError{
+			Code:        ErrCodeConfigMissingField,
+			Message:     "缺少提供商类型(type)字段",
+			ConfigField: "type",
+		}
 	}
 	
 	// 验证提供商类型是否支持
@@ -157,8 +160,6 @@ func (f *DefaultProviderFactory) ValidateConfig(config interface{}) error {
 	switch providerType {
 	case TypeTencentCOS:
 		return f.validateTencentCOSConfig(configMap)
-	case TypeAliyunOSS:
-		return f.validateAliyunOSSConfig(configMap)
 	case TypeAWSS3:
 		return f.validateAWSS3Config(configMap)
 	}
@@ -170,40 +171,70 @@ func (f *DefaultProviderFactory) ValidateConfig(config interface{}) error {
 func (f *DefaultProviderFactory) SupportedProviderTypes() []string {
 	return []string{
 		TypeTencentCOS,
-		TypeAliyunOSS,
 		TypeAWSS3,
 	}
 }
 
 // createTencentCOS 创建腾讯云COS提供商实例
 func (f *DefaultProviderFactory) createTencentCOS(config map[string]interface{}) (interface{}, error) {
-	// 这里应该调用实际的构造函数
-	// 由于循环导入问题，这里返回一个占位符
-	return nil, &FactoryError{
-		Code:         ErrCodeProviderCreationFailed,
-		Message:      "腾讯云COS提供商创建功能待实现",
-		ProviderType: TypeTencentCOS,
+	// 创建简单的 storage.Config
+	storageConfig := storage.Config{}
+	
+	// 设置基本字段
+	if typeVal, ok := config["type"].(string); ok {
+		storageConfig.Type = storage.ProviderType(typeVal)
 	}
-}
-
-// createAliyunOSS 创建阿里云OSS提供商实例
-func (f *DefaultProviderFactory) createAliyunOSS(config map[string]interface{}) (interface{}, error) {
-	// 这里应该调用实际的构造函数
-	return nil, &FactoryError{
-		Code:         ErrCodeProviderCreationFailed,
-		Message:      "阿里云OSS提供商创建功能待实现",
-		ProviderType: TypeAliyunOSS,
+	
+	if bucket, ok := config["bucket"].(string); ok {
+		storageConfig.Bucket = bucket
 	}
+	
+	if region, ok := config["region"].(string); ok {
+		storageConfig.Region = region
+	}
+	
+	// 设置认证信息
+	if secretID, ok := config["secret_id"].(string); ok {
+		storageConfig.Credentials.SecretID = secretID
+	}
+	
+	if secretKey, ok := config["secret_key"].(string); ok {
+		storageConfig.Credentials.SecretKey = secretKey
+	}
+	
+	// 调用最小化版的构造函数
+	return NewTencentCOSProvider(storageConfig)
 }
 
 // createAWSS3 创建AWS S3提供商实例
 func (f *DefaultProviderFactory) createAWSS3(config map[string]interface{}) (interface{}, error) {
-	// 这里应该调用实际的构造函数
-	return nil, &FactoryError{
-		Code:         ErrCodeProviderCreationFailed,
-		Message:      "AWS S3提供商创建功能待实现",
-		ProviderType: TypeAWSS3,
+	// 创建简单的 storage.Config
+	storageConfig := storage.Config{}
+	
+	// 设置基本字段
+	if typeVal, ok := config["type"].(string); ok {
+		storageConfig.Type = storage.ProviderType(typeVal)
 	}
+	
+	if bucket, ok := config["bucket"].(string); ok {
+		storageConfig.Bucket = bucket
+	}
+	
+	if region, ok := config["region"].(string); ok {
+		storageConfig.Region = region
+	}
+	
+	// 设置认证信息
+	if accessKeyID, ok := config["access_key_id"].(string); ok {
+		storageConfig.Credentials.AWSAccessKeyID = accessKeyID
+	}
+	
+	if secretAccessKey, ok := config["secret_access_key"].(string); ok {
+		storageConfig.Credentials.AWSSecretAccessKey = secretAccessKey
+	}
+	
+	// 调用简化版的构造函数
+	return NewAWSS3Provider(storageConfig)
 }
 
 // validateTencentCOSConfig 验证腾讯云COS配置
@@ -215,22 +246,6 @@ func (f *DefaultProviderFactory) validateTencentCOSConfig(config map[string]inte
 				Code:         ErrCodeConfigMissingField,
 				Message:      "缺少必需字段",
 				ProviderType: TypeTencentCOS,
-				ConfigField:  field,
-			}
-		}
-	}
-	return nil
-}
-
-// validateAliyunOSSConfig 验证阿里云OSS配置
-func (f *DefaultProviderFactory) validateAliyunOSSConfig(config map[string]interface{}) error {
-	requiredFields := []string{"access_key_id", "access_key_secret", "endpoint", "bucket"}
-	for _, field := range requiredFields {
-		if _, ok := config[field]; !ok {
-			return &FactoryError{
-				Code:         ErrCodeConfigMissingField,
-				Message:      "缺少必需字段",
-				ProviderType: TypeAliyunOSS,
 				ConfigField:  field,
 			}
 		}

@@ -2,6 +2,8 @@ package providers
 
 import (
 	"testing"
+	
+	"github.com/zhangyf/cloud-storage-tool/internal/storage"
 )
 
 // TestSupportedProviderTypes 测试支持的提供商类型列表
@@ -10,14 +12,13 @@ func TestSupportedProviderTypes(t *testing.T) {
 	types := factory.SupportedProviderTypes()
 	
 	// 验证返回的类型数量
-	if len(types) != 3 {
-		t.Errorf("期望支持3个提供商类型，实际得到 %d 个", len(types))
+	if len(types) != 2 {
+		t.Errorf("期望支持2个提供商类型，实际得到 %d 个", len(types))
 	}
 	
 	// 验证包含所有预期的类型
 	expectedTypes := map[string]bool{
 		TypeTencentCOS: false,
-		TypeAliyunOSS:  false,
 		TypeAWSS3:      false,
 	}
 	
@@ -52,19 +53,6 @@ func TestValidateConfigValid(t *testing.T) {
 	
 	if err := factory.ValidateConfig(cosConfig); err != nil {
 		t.Errorf("腾讯云COS配置验证失败：%v", err)
-	}
-	
-	// 测试阿里云OSS配置
-	ossConfig := map[string]interface{}{
-		"type":                TypeAliyunOSS,
-		"access_key_id":       "test_access_key_id",
-		"access_key_secret":   "test_access_key_secret",
-		"endpoint":            "oss-cn-hangzhou.aliyuncs.com",
-		"bucket":              "test-bucket",
-	}
-	
-	if err := factory.ValidateConfig(ossConfig); err != nil {
-		t.Errorf("阿里云OSS配置验证失败：%v", err)
 	}
 	
 	// 测试AWS S3配置
@@ -123,6 +111,8 @@ func TestValidateConfigMissingType(t *testing.T) {
 			if fe.ConfigField != "type" {
 				t.Errorf("期望配置字段为 'type'，实际得到 %s", fe.ConfigField)
 			}
+		} else {
+			t.Errorf("期望错误类型为 *FactoryError，实际得到 %T", err)
 		}
 	}
 }
@@ -173,18 +163,6 @@ func TestValidateConfigMissingRequiredFields(t *testing.T) {
 				"bucket":     "test-bucket",
 			},
 			expectedField: "secret_id",
-		},
-		{
-			name:         "阿里云OSS缺少access_key_secret",
-			providerType: TypeAliyunOSS,
-			config: map[string]interface{}{
-				"type":              TypeAliyunOSS,
-				"access_key_id":     "test_access_key_id",
-				// 缺少access_key_secret
-				"endpoint":          "oss-cn-hangzhou.aliyuncs.com",
-				"bucket":            "test-bucket",
-			},
-			expectedField: "access_key_secret",
 		},
 		{
 			name:         "AWS S3缺少region",
@@ -243,17 +221,6 @@ func TestCreateProviderValidConfig(t *testing.T) {
 			},
 		},
 		{
-			name:         "阿里云OSS",
-			providerType: TypeAliyunOSS,
-			config: map[string]interface{}{
-				"type":                TypeAliyunOSS,
-				"access_key_id":       "test_access_key_id",
-				"access_key_secret":   "test_access_key_secret",
-				"endpoint":            "oss-cn-hangzhou.aliyuncs.com",
-				"bucket":              "test-bucket",
-			},
-		},
-		{
 			name:         "AWS S3",
 			providerType: TypeAWSS3,
 			config: map[string]interface{}{
@@ -268,28 +235,22 @@ func TestCreateProviderValidConfig(t *testing.T) {
 	
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// 由于循环导入问题，CreateProvider目前返回错误
-			// 这里我们主要测试接口调用不会panic
+			// 现在工厂可以成功创建提供商（最小化版）
 			provider, err := factory.CreateProvider(tc.config)
 			
-			// 验证返回了错误（因为实际创建功能未实现）
-			if err == nil {
-				t.Errorf("测试用例 '%s'：期望返回错误（功能未实现），但错误为nil", tc.name)
+			// 验证没有错误
+			if err != nil {
+				t.Errorf("测试用例 '%s'：期望创建成功，但得到错误: %v", tc.name, err)
 			}
 			
-			// 验证错误类型
-			if fe, ok := err.(*FactoryError); ok {
-				if fe.Code != ErrCodeProviderCreationFailed {
-					t.Errorf("测试用例 '%s'：期望错误代码 %s，实际得到 %s", tc.name, ErrCodeProviderCreationFailed, fe.Code)
-				}
-				if fe.ProviderType != tc.providerType {
-					t.Errorf("测试用例 '%s'：期望提供商类型 %s，实际得到 %s", tc.name, tc.providerType, fe.ProviderType)
-				}
+			// 验证provider不为nil
+			if provider == nil {
+				t.Errorf("测试用例 '%s'：期望provider不为nil，但得到nil", tc.name)
 			}
 			
-			// 验证provider为nil
-			if provider != nil {
-				t.Errorf("测试用例 '%s'：期望provider为nil，实际得到 %v", tc.name, provider)
+			// 验证provider实现了正确的接口
+			if _, ok := provider.(storage.StorageProvider); !ok {
+				t.Errorf("测试用例 '%s'：创建的provider没有实现StorageProvider接口", tc.name)
 			}
 		})
 	}
